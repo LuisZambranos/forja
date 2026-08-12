@@ -1,278 +1,468 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { collection, doc, writeBatch, getDoc, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import {
+  collection, doc, writeBatch, getDoc,
+  query, where, orderBy, limit, getDocs
+} from 'firebase/firestore';
 import { db } from '../../shared/firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { useWorkoutStore } from '../../store/workoutStore';
 import type { Routine, Exercise, WorkoutSession, WorkoutSet } from '../../shared/types';
 import { Button } from '../../components/ui/Button';
-import { Card } from '../../components/ui/Card';
-import { Play, Square, Check, Timer } from 'lucide-react';
+import { Play, Timer, ChevronRight, Check, X } from 'lucide-react';
 import { useFirestoreQuery } from '../../hooks/useFirebaseQuery';
 
+// ──────────────────────────────────────────────
+//  Tipos internos del flujo por serie
+// ──────────────────────────────────────────────
+type Phase = 'intro' | 'active' | 'resting';
+
+interface LastTimeStats {
+  avgWeight: number;
+  avgReps: number;
+  totalSets: number;
+}
+
+// ──────────────────────────────────────────────
+//  Helpers
+// ──────────────────────────────────────────────
+function formatTime(s: number) {
+  const m = Math.floor(s / 60);
+  return `${m}:${(s % 60).toString().padStart(2, '0')}`;
+}
+
+async function fetchLastTime(uid: string, exerciseId: string): Promise<LastTimeStats | null> {
+  const q = query(
+    collection(db, 'workout_sessions'),
+    where('owner_id', '==', uid),
+    orderBy('finished_at', 'desc'),
+    limit(10)
+  );
+  const snaps = await getDocs(q);
+  for (const d of snaps.docs) {
+    const session = d.data() as WorkoutSession;
+    const matching = (session.sets || []).filter(s => s.exercise_id === exerciseId);
+    if (matching.length > 0) {
+      const avgWeight = matching.reduce((a, s) => a + s.weight, 0) / matching.length;
+      const avgReps   = matching.reduce((a, s) => a + s.reps, 0)   / matching.length;
+      return { avgWeight: Math.round(avgWeight), avgReps: Math.round(avgReps), totalSets: matching.length };
+    }
+  }
+  return null;
+}
+
+// ──────────────────────────────────────────────
+//  Componente principal
+// ──────────────────────────────────────────────
 export default function FocusMode() {
   const { routineId } = useParams<{ routineId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  const { 
-    activeSession, startWorkout, finishWorkout, 
-    addSet, sets, restTimer, isTimerRunning, 
-    startRestTimer, decrementTimer, stopRestTimer 
-  } = useWorkoutStore();
 
+  const { finishWorkout } = useWorkoutStore();
+
+  // Estado de la máquina
+  const [phase, setPhase] = useState<Phase>('intro');
   const [routine, setRoutine] = useState<Routine | null>(null);
-  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [weight, setWeight] = useState<number>(0);
-  const [reps, setReps] = useState<number>(0);
-  const [lastTimeData, setLastTimeData] = useState<any>(null);
+  const [exIndex, setExIndex] = useState(0);         // índice del ejercicio actual
+  const [setIndex, setSetIndex] = useState(0);       // serie actual (0-based)
+  const [weight, setWeight] = useState('');
+  const [reps, setReps] = useState('');
+  const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
+  const [lastTime, setLastTime] = useState<LastTimeStats | null>(null);
+  const [loadingLast, setLoadingLast] = useState(false);
+  const [restTimer, setRestTimer] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [startedAt] = useState(Date.now());
+
+  // Caché de ejercicios
+  const { data: myExercises = [] } = useFirestoreQuery<Exercise>(
+    ['exercises', user?.uid], 'exercises',
+    user ? [where('owner_id', '==', user.uid)] : [], 1000 * 60 * 60
+  );
+  const { data: globalExercises = [] } = useFirestoreQuery<Exercise>(
+    ['global_exercises'], 'exercises',
+    [where('is_global', '==', true)], 1000 * 60 * 60
+  );
+  const allExercises = [...myExercises, ...globalExercises];
 
   // Wake lock
   useEffect(() => {
-    let wakeLock: any = null;
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await (navigator as any).wakeLock.request('screen');
-        }
-      } catch (err) {
-        console.error('Wake Lock error:', err);
-      }
+    let wl: any = null;
+    const req = async () => {
+      try { if ('wakeLock' in navigator) wl = await (navigator as any).wakeLock.request('screen'); }
+      catch {}
     };
-    if (activeSession) requestWakeLock();
-    return () => {
-      if (wakeLock) wakeLock.release();
-    };
-  }, [activeSession]);
+    req();
+    return () => { wl?.release(); };
+  }, []);
 
-  // Load routine
+  // Cargar rutina
   useEffect(() => {
-    const loadRoutine = async () => {
-      if (!routineId) return;
-      const rSnap = await getDoc(doc(db, 'routines', routineId));
-      if (rSnap.exists()) {
-        setRoutine({ id: rSnap.id, ...rSnap.data() } as Routine);
-      }
-    };
-    loadRoutine();
+    if (!routineId) return;
+    getDoc(doc(db, 'routines', routineId)).then(snap => {
+      if (snap.exists()) setRoutine({ id: snap.id, ...snap.data() } as Routine);
+    });
   }, [routineId]);
 
-  // Fetch exercises
-  const { data: exercises = [] } = useFirestoreQuery<Exercise>(
-    ['exercises', user?.uid],
-    'exercises',
-    [where('owner_id', '==', user?.uid)],
-    1000 * 60 * 60
-  );
-
-  // Timer
+  // Cargar "última vez" cuando cambia el ejercicio
   useEffect(() => {
-    let interval: any;
-    if (isTimerRunning && restTimer > 0) {
-      interval = setInterval(() => {
-        decrementTimer();
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isTimerRunning, restTimer, decrementTimer]);
-
-  const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  // Last time
-  useEffect(() => {
-    const loadLastTime = async () => {
-      if (!user || !routine || routine.exercises.length === 0) return;
-      
-      const currentEx = routine.exercises[currentExerciseIndex];
-      const q = query(
-        collection(db, 'workout_sessions'),
-        where('owner_id', '==', user.uid),
-        orderBy('finished_at', 'desc'),
-        limit(5)
-      );
-      
-      const snaps = await getDocs(q);
-      let found = null;
-      for (const d of snaps.docs) {
-        const session = d.data() as WorkoutSession;
-        const matchingSets = session.sets.filter(s => s.exercise_id === currentEx.exercise_id);
-        if (matchingSets.length > 0) {
-          found = matchingSets;
-          break;
+    if (!routine || !user) return;
+    const ex = routine.exercises[exIndex];
+    if (!ex) return;
+    setLoadingLast(true);
+    fetchLastTime(user.uid, ex.exercise_id)
+      .then(res => {
+        setLastTime(res);
+        if (res) {
+          setWeight(String(res.avgWeight));
+          setReps(String(res.avgReps));
+        } else {
+          setWeight('');
+          setReps(String(ex.target_reps));
         }
-      }
-      setLastTimeData(found);
-    };
-    loadLastTime();
-  }, [currentExerciseIndex, routine, user]);
+      })
+      .finally(() => setLoadingLast(false));
+  }, [exIndex, routine, user]);
 
-  if (!routine) return <div className="p-4 text-center text-text-muted mt-20">Cargando rutina...</div>;
-
-  const currentRoutineEx = routine.exercises[currentExerciseIndex];
-  const currentEx = exercises.find(e => e.id === currentRoutineEx?.exercise_id);
-  const currentSets = sets.filter(s => s.exercise_id === currentRoutineEx?.exercise_id);
-
-  const handleStart = () => startWorkout(routine.id);
-
-  const handleLogSet = () => {
-    if (!currentRoutineEx) return;
-    addSet({
-      exercise_id: currentRoutineEx.exercise_id,
-      weight,
-      reps,
-      set_type: 'normal'
+  const adjustValue = (setter: React.Dispatch<React.SetStateAction<string>>, amount: number, min: number = 0) => {
+    setter(prev => {
+      const val = parseFloat(prev) || 0;
+      return Math.max(min, val + amount).toString();
     });
-    startRestTimer(currentRoutineEx.rest_seconds);
   };
 
+  // Timer de descanso
+  useEffect(() => {
+    if (phase !== 'resting' || restTimer <= 0) return;
+    const interval = setInterval(() => {
+      setRestTimer(prev => {
+        if (prev <= 1) { clearInterval(interval); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phase, restTimer]);
+
+  if (!routine) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center">
+        <span className="text-primary animate-pulse font-bold text-xl">Cargando...</span>
+      </div>
+    );
+  }
+
+  const currentRoutineEx = routine.exercises[exIndex];
+  const currentEx = allExercises.find(e => e.id === currentRoutineEx?.exercise_id);
+  const targetSets = currentRoutineEx?.target_sets ?? 3;
+  const isLastExercise = exIndex === routine.exercises.length - 1;
+  const isLastSet = setIndex >= targetSets - 1;
+
+  // ── Confirmar serie ──
+  const handleConfirmSet = () => {
+    const w = parseFloat(weight) || 0;
+    const r = parseInt(reps)    || 0;
+    if (r === 0) return; // al menos reps
+
+    const newSet: WorkoutSet = {
+      exercise_id: currentRoutineEx.exercise_id,
+      weight: w, reps: r, set_type: 'normal'
+    };
+    setCompletedSets(prev => [...prev, newSet]);
+
+    // Iniciar descanso
+    setRestTimer(currentRoutineEx.rest_seconds || 90);
+    setPhase('resting');
+  };
+
+  // ── Siguiente serie (desde modal de descanso) ──
+  const handleNextSet = () => {
+    if (isLastSet) {
+      // Pasar al siguiente ejercicio
+      if (isLastExercise) {
+        handleFinish();
+        return;
+      }
+      setExIndex(prev => prev + 1);
+      setSetIndex(0);
+      setWeight('');
+      setReps('');
+      setPhase('intro');
+    } else {
+      setSetIndex(prev => prev + 1);
+      // No limpiamos weight ni reps para que se mantengan de la serie anterior
+      setPhase('active');
+    }
+  };
+
+  // ── Finalizar entrenamiento ──
   const handleFinish = async () => {
     if (!user) return;
     setSaving(true);
     try {
       const batch = writeBatch(db);
-      const sessionRef = doc(collection(db, 'workout_sessions'));
-      
-      const sessionData = {
+      const ref = doc(collection(db, 'workout_sessions'));
+      batch.set(ref, {
         owner_id: user.uid,
         routine_id: routine.id,
-        started_at: useWorkoutStore.getState().startedAt || Date.now(),
+        started_at: startedAt,
         finished_at: Date.now(),
-        duration_seconds: Math.floor((Date.now() - (useWorkoutStore.getState().startedAt || Date.now())) / 1000),
-        sets: useWorkoutStore.getState().sets
-      };
-      
-      batch.set(sessionRef, sessionData);
+        duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
+        sets: completedSets
+      });
       await batch.commit();
-      
       finishWorkout();
       navigate('/');
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert('Error al guardar sesión');
     } finally {
       setSaving(false);
     }
   };
 
-  if (!activeSession) {
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: INTRO DEL EJERCICIO
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'intro') {
     return (
-      <div className="p-4 max-w-lg mx-auto min-h-screen flex flex-col justify-center items-center text-center">
-        <h1 className="text-3xl font-bold mb-2 text-primary">{routine.name}</h1>
-        <p className="text-text-muted mb-12">
-          {routine.exercises.length} ejercicios. Prepárate para empezar.
-        </p>
-        <Button size="lg" onClick={handleStart} className="w-64 rounded-full h-16 text-lg">
-          <Play className="mr-2" /> Iniciar
+      <div className="min-h-dvh flex flex-col bg-bg px-4 py-8 max-w-lg mx-auto">
+        {/* Progreso */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-text-muted font-bold uppercase tracking-widest">
+              Ejercicio {exIndex + 1} de {routine.exercises.length}
+            </span>
+            <button onClick={() => navigate('/')} className="text-text-muted p-1">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          {/* Barra de progreso */}
+          <div className="h-1 bg-surface-alt rounded-full">
+            <div
+              className="h-1 bg-primary rounded-full transition-all duration-500"
+              style={{ width: `${((exIndex) / routine.exercises.length) * 100}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Nombre del ejercicio */}
+        <div className="flex-1 flex flex-col justify-center">
+          <p className="text-primary text-sm font-bold uppercase tracking-widest mb-3">
+            {currentEx?.muscle_group}
+          </p>
+          <h1 className="text-4xl font-black text-text mb-6 leading-tight">
+            {currentEx?.name || '...'}
+          </h1>
+
+          {/* Datos de última vez */}
+          <div className="bg-surface border border-border rounded-2xl p-4 mb-8">
+            <p className="text-xs text-text-muted font-bold uppercase tracking-wider mb-3">
+              Última vez
+            </p>
+            {loadingLast ? (
+              <div className="skeleton h-10 rounded-xl" />
+            ) : lastTime ? (
+              <div className="flex gap-6">
+                <div>
+                  <p className="text-3xl font-black text-text">{lastTime.avgWeight}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
+                  <p className="text-xs text-text-muted mt-1">Peso promedio</p>
+                </div>
+                <div className="w-px bg-border" />
+                <div>
+                  <p className="text-3xl font-black text-text">{lastTime.avgReps}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
+                  <p className="text-xs text-text-muted mt-1">Reps promedio</p>
+                </div>
+                <div className="w-px bg-border" />
+                <div>
+                  <p className="text-3xl font-black text-text">{lastTime.totalSets}</p>
+                  <p className="text-xs text-text-muted mt-1">Series</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-text-muted text-sm italic">Primera vez. ¡Dale caña!</p>
+            )}
+          </div>
+
+          {/* Target */}
+          <p className="text-center text-text-muted text-sm mb-8">
+            Meta: <span className="text-text font-bold">{targetSets} series × {currentRoutineEx.target_reps} reps</span>
+            {' · '}Descanso: <span className="text-text font-bold">{currentRoutineEx.rest_seconds}s</span>
+          </p>
+        </div>
+
+        {/* CTA */}
+        <Button
+          variant="highlight"
+          fullWidth
+          size="lg"
+          className="rounded-2xl h-16 text-xl font-black glow-highlight"
+          onClick={() => setPhase('active')}
+        >
+          <Play className="mr-2 fill-current" /> Empezar serie 1
         </Button>
       </div>
     );
   }
 
-  return (
-    <div className="p-4 pb-32 max-w-lg mx-auto min-h-screen flex flex-col">
-      <header className="flex justify-between items-center mb-6 pt-4 sticky top-0 bg-bg z-10 py-4 border-b border-border">
-        <h1 className="text-lg font-bold truncate pr-4 text-text-muted">{routine.name}</h1>
-        {isTimerRunning ? (
-          <div className="flex items-center gap-2 text-warning bg-warning/10 px-3 py-1.5 rounded-full cursor-pointer touch-manipulation" onClick={stopRestTimer}>
-            <Timer className="w-5 h-5" />
-            <span className="font-mono font-bold text-xl">{formatTime(restTimer)}</span>
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: SERIE ACTIVA
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'active') {
+    return (
+      <div className="min-h-dvh flex flex-col bg-bg px-4 py-8 max-w-lg mx-auto">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-xs text-text-muted font-bold uppercase tracking-widest">
+              {currentEx?.name}
+            </span>
+            <span className="text-xs text-primary font-bold bg-primary/15 px-3 py-1 rounded-full">
+              Serie {setIndex + 1} / {targetSets}
+            </span>
           </div>
-        ) : (
-          <div className="text-sm text-text-muted/50 flex items-center gap-1">
-            <Timer className="w-4 h-4" /> 0:00
+          <div className="h-1 bg-surface-alt rounded-full">
+            <div
+              className="h-1 bg-primary rounded-full transition-all"
+              style={{ width: `${((setIndex) / targetSets) * 100}%` }}
+            />
           </div>
-        )}
-      </header>
-
-      <div className="flex-1">
-        <div className="flex justify-between text-sm mb-2 text-text-muted font-medium">
-          <span>{currentExerciseIndex + 1} / {routine.exercises.length}</span>
-          <span>{currentSets.length}/{currentRoutineEx?.target_sets} series</span>
         </div>
-        
-        <h2 className="text-4xl font-bold mb-8 text-text tracking-tight">{currentEx?.name || 'Cargando...'}</h2>
 
-        {lastTimeData && lastTimeData.length > 0 && (
-          <Card className="mb-8 bg-surface-alt/30 border-none shadow-none">
-            <h3 className="text-xs uppercase text-text-muted font-bold mb-3 tracking-wider">Última vez</h3>
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-2 px-2 snap-x">
-              {lastTimeData.map((s: WorkoutSet, idx: number) => (
-                <div key={idx} className="bg-surface border border-border px-4 py-2 rounded-xl whitespace-nowrap text-sm font-medium snap-start">
-                  {s.weight}kg × {s.reps}
-                </div>
-              ))}
+        {/* Inputs grandes */}
+        <div className="flex-1 flex flex-col justify-center gap-6">
+          {/* Sugerencia de la última vez */}
+          {lastTime && (
+            <p className="text-center text-sm text-text-muted">
+              Última vez: <span className="text-text font-bold">{lastTime.avgWeight}kg × {lastTime.avgReps} reps</span>
+            </p>
+          )}
+
+          {/* Peso */}
+          <div>
+            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+              Peso (kg)
+            </label>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => adjustValue(setWeight, -2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={weight}
+                onChange={e => setWeight(e.target.value)}
+                placeholder={lastTime ? String(lastTime.avgWeight) : '0'}
+                className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                  border-2 border-border focus:outline-none
+                  placeholder:text-border transition-colors"
+              />
+              <button type="button" onClick={() => adjustValue(setWeight, 2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
             </div>
-          </Card>
-        )}
-
-        <div className="grid grid-cols-2 gap-4 mb-8">
-          <div>
-            <label className="block text-sm text-text-muted mb-2 font-medium">Peso (kg)</label>
-            <input 
-              type="number"
-              value={weight || ''}
-              onChange={e => setWeight(Number(e.target.value))}
-              className="w-full bg-surface text-4xl font-bold text-center h-24 rounded-2xl border-2 border-border focus:border-primary focus:outline-none transition-colors touch-manipulation shadow-inner"
-            />
           </div>
+
+          {/* Reps */}
           <div>
-            <label className="block text-sm text-text-muted mb-2 font-medium">Reps</label>
-            <input 
-              type="number"
-              value={reps || ''}
-              onChange={e => setReps(Number(e.target.value))}
-              className="w-full bg-surface text-4xl font-bold text-center h-24 rounded-2xl border-2 border-border focus:border-primary focus:outline-none transition-colors touch-manipulation shadow-inner"
-            />
+            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+              Repeticiones
+            </label>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => adjustValue(setReps, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={reps}
+                onChange={e => setReps(e.target.value)}
+                placeholder={lastTime ? String(lastTime.avgReps) : String(targetSets)}
+                className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                  border-2 border-border focus:outline-none
+                  placeholder:text-border transition-colors"
+              />
+              <button type="button" onClick={() => adjustValue(setReps, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+            </div>
           </div>
         </div>
 
-        <Button 
-          size="lg" 
-          fullWidth 
-          onClick={handleLogSet} 
-          disabled={weight <= 0 || reps <= 0}
-          className="mb-10 h-16 text-lg rounded-2xl shadow-lg shadow-primary/20"
-        >
-          <Check className="mr-2" /> Registrar Serie
-        </Button>
-
-        <div className="flex justify-between gap-4 mt-auto">
-          <Button 
-            variant="ghost" 
-            onClick={() => setCurrentExerciseIndex(prev => prev > 0 ? prev - 1 : 0)} 
-            disabled={currentExerciseIndex === 0}
-            className="flex-1 bg-surface-alt hover:bg-surface-alt/80"
+        {/* Botón confirmar + descanso */}
+        <div className="pt-6">
+          <Button
+            variant="highlight"
+            fullWidth
+            size="lg"
+            className="h-16 rounded-2xl text-lg font-black glow-highlight"
+            onClick={handleConfirmSet}
+            disabled={!reps}
           >
-            Anterior
-          </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => setCurrentExerciseIndex(prev => prev < routine.exercises.length - 1 ? prev + 1 : prev)} 
-            disabled={currentExerciseIndex === routine.exercises.length - 1}
-            className="flex-1 bg-surface-alt hover:bg-surface-alt/80"
-          >
-            Siguiente
+            <Check className="mr-2 w-6 h-6" />
+            {isLastSet && isLastExercise
+              ? 'Confirmar y Finalizar'
+              : 'Confirmar — Iniciar Descanso'}
           </Button>
         </div>
       </div>
+    );
+  }
 
-      <div className="fixed bottom-0 left-0 w-full p-4 bg-gradient-to-t from-bg via-bg to-transparent pointer-events-none">
-        <div className="max-w-lg mx-auto pointer-events-auto">
-          <Button 
-            variant="danger" 
-            fullWidth 
-            onClick={handleFinish}
-            disabled={saving}
-            className="h-14 rounded-2xl"
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: DESCANSO (modal a pantalla completa)
+  // ─────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-dvh flex flex-col items-center justify-between bg-bg px-4 py-10 max-w-lg mx-auto">
+      {/* Top */}
+      <div className="text-center w-full">
+        <p className="text-xs text-text-muted font-bold uppercase tracking-widest mb-2">
+          {currentEx?.name} · Serie {setIndex + 1} ✓
+        </p>
+        <div className="h-px bg-border w-16 mx-auto" />
+      </div>
+
+      {/* Timer central */}
+      <div className="flex flex-col items-center gap-4">
+        {restTimer > 0 ? (
+          <>
+            <div className="w-40 h-40 rounded-full border-4 border-highlight/30 flex items-center justify-center
+              bg-highlight/5 relative">
+              <Timer className="absolute top-4 left-1/2 -translate-x-1/2 w-5 h-5 text-highlight" />
+              <span className="text-5xl font-black text-highlight font-mono">
+                {formatTime(restTimer)}
+              </span>
+            </div>
+            <p className="text-text-muted text-sm">Descansando…</p>
+          </>
+        ) : (
+          <>
+            <div className="w-40 h-40 rounded-full border-4 border-success/50 flex items-center justify-center
+              bg-success/10">
+              <span className="text-5xl">🔥</span>
+            </div>
+            <p className="text-xl font-bold text-success">¡Listo para la siguiente!</p>
+          </>
+        )}
+      </div>
+
+      {/* Botones */}
+      <div className="w-full flex flex-col gap-3">
+        <Button
+          variant="highlight"
+          fullWidth
+          size="lg"
+          className="h-16 rounded-2xl font-black text-lg glow-highlight"
+          onClick={handleNextSet}
+          disabled={saving}
+        >
+          <ChevronRight className="mr-1 w-6 h-6" />
+          {isLastSet && isLastExercise
+            ? (saving ? 'Guardando...' : 'Finalizar Entrenamiento')
+            : isLastSet
+              ? `Ejercicio ${exIndex + 2}: ${allExercises.find(e => e.id === routine.exercises[exIndex + 1]?.exercise_id)?.name || '...'}`
+              : `Serie ${setIndex + 2} de ${targetSets}`}
+        </Button>
+
+        {restTimer > 0 && (
+          <button
+            onClick={() => setRestTimer(0)}
+            className="text-center text-sm text-text-muted underline underline-offset-2"
           >
-            <Square className="mr-2 w-4 h-4 fill-current" /> {saving ? 'Guardando...' : 'Finalizar Entrenamiento'}
-          </Button>
-        </div>
+            Saltar descanso
+          </button>
+        )}
       </div>
     </div>
   );

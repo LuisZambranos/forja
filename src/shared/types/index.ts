@@ -3,6 +3,9 @@ export interface User {
   email: string;
   display_name: string;
   role: 'free' | 'premium';
+  height_cm?: number;
+  initial_weight_kg?: number;
+  sex?: 'male' | 'female';
   settings: {
     auto_timer: boolean;
   };
@@ -30,6 +33,7 @@ export interface Routine {
   name: string;
   is_public: boolean;
   exercises: RoutineExercise[];
+  scheduled_days?: number[];
 }
 
 export interface WorkoutSet {

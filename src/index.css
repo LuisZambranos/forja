@@ -1,26 +1,114 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg: #0B0D10;
-  --color-surface: #16191D;
-  --color-surface-alt: #1E2227;
-  --color-border: #2A2F36;
-  --color-text: #F5F6F7;
-  --color-text-muted: #9AA1AB;
-  --color-primary: #FF6A3D;
-  --color-primary-hover: #FF8259;
-  --color-secondary: #4C6EF5;
+  /* === Fondos (60%) === */
+  --color-bg: #09070F;
+  --color-surface: #15101F;
+  --color-surface-alt: #1E1830;
+  --color-border: #2E2645;
+
+  /* === Tipografía === */
+  --color-text: #F5F3FA;
+  --color-text-muted: #9C93B5;
+
+  /* === Color Estructural 30% — Morado === */
+  --color-primary: #8B5CF6;
+  --color-primary-hover: #A78BFA;
+
+  /* === Color de Atención 10% — Naranja (úsalo poco) === */
+  --color-highlight: #FF6B00;
+  --color-highlight-hover: #FF8A33;
+
+  /* === Estados Semánticos (no son de marca) === */
   --color-success: #2FBF71;
   --color-warning: #F5B942;
   --color-danger: #F5473E;
+
+  /* === Tipografía === */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-html, body {
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  font-family: system-ui, -apple-system, sans-serif;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
+/* ────────────────────────────────────────
+   BASE GLOBAL
+──────────────────────────────────────── */
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+    /* Scrollbar invisible pero funcional */
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100dvh;
+    /* Elimina el flash azul/negro al tocar en Android */
+    -webkit-tap-highlight-color: transparent;
+    /* Previene scroll horizontal accidental */
+    overflow-x: hidden;
+  }
+
+  * {
+    box-sizing: border-box;
+    /* Touch más fluido en todos los elementos interactivos */
+    touch-action: manipulation;
+  }
+
+  /* Número inputs: quitar flechas nativas (más limpio en móvil) */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+}
+
+/* ────────────────────────────────────────
+   COMPONENTES UTILITARIOS
+──────────────────────────────────────── */
+@layer components {
+  /* Glassmorphism sutil para overlays */
+  .glass-card {
+    background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--color-border);
+    border-radius: 1.25rem;
+  }
+
+  /* Glow morado — para elementos primarios destacados */
+  .glow-primary {
+    box-shadow: 0 0 20px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  }
+
+  /* Glow naranja — SOLO para CTAs urgentes (Finalizar, timer activo) */
+  .glow-highlight {
+    box-shadow: 0 0 24px color-mix(in srgb, var(--color-highlight) 35%, transparent);
+  }
+
+  /* Skeleton loader */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-surface) 0%,
+      var(--color-surface-alt) 50%,
+      var(--color-surface) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 0.5rem;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position:  200% 0; }
+  }
 }
