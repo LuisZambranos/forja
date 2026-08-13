@@ -3,7 +3,7 @@ import { Home, Dumbbell, ClipboardList, User } from 'lucide-react';
 
 const tabs = [
   { to: '/',           icon: Home,          label: 'Inicio'    },
-  { to: '/routines/new', icon: ClipboardList, label: 'Rutinas'   },
+  { to: '/routines',   icon: ClipboardList, label: 'Rutinas'   },
   { to: '/exercises',  icon: Dumbbell,      label: 'Ejercicios'},
   { to: '/profile',    icon: User,          label: 'Perfil'    },
 ];

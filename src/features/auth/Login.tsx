@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../../shared/firebase/config';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useNavigate } from 'react-router-dom';
+import logoNoBg from '../../assets/logo-removebg.png';
 
 export default function Login() {
   const [isRegister, setIsRegister] = useState(false);
@@ -32,16 +33,16 @@ export default function Login() {
     }
   };
 
-  const handleGoogleAuth = async () => {
-    setError('');
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-      navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Error con Google Auth');
-    }
-  };
+  // const handleGoogleAuth = async () => {
+  //   setError('');
+  //   const provider = new GoogleAuthProvider();
+  //   try {
+  //     await signInWithPopup(auth, provider);
+  //     navigate('/');
+  //   } catch (err: any) {
+  //     setError(err.message || 'Error con Google Auth');
+  //   }
+  // };
 
   return (
     <div className="min-h-dvh flex flex-col relative bg-bg overflow-hidden max-w-lg mx-auto">
@@ -49,16 +50,24 @@ export default function Login() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-primary/20 via-bg to-bg opacity-80 pointer-events-none" />
 
       {/* Mitad superior: Logo y branding */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
-        <div className="w-20 h-20 bg-linear-to-br from-primary/30 to-highlight/20 rounded-3xl border border-primary/30 flex items-center justify-center mb-6 shadow-2xl glow-primary backdrop-blur-sm">
-          <span className="text-4xl drop-shadow-lg">💪</span>
+      <div className="flex flex-col items-center justify-center py-8 px-6 relative z-10 gap-3">
+        {/* Logo container: div decorativo con el hacha sin fondo */}
+        <div className="w-24 h-24 bg-linear-to-br from-primary/20 to-highlight/10 rounded-3xl border border-primary/25 flex items-center justify-center shadow-2xl glow-primary backdrop-blur-sm">
+          <img 
+            src={logoNoBg} 
+            alt="Forja Logo" 
+            className="w-22 h-22 object-contain drop-shadow-[0_0_14px_rgba(139,92,246,0.6)]" 
+          />
         </div>
-        <h1 className="text-5xl font-black tracking-widest text-transparent bg-clip-text bg-linear-to-r from-text to-text-muted mb-2 uppercase">
-          Forja
-        </h1>
-        <p className="text-sm font-medium text-text-muted text-center max-w-xs">
-          Forja tu disciplina. Registra tu progreso. Supera tus límites.
-        </p>
+
+        <div className="text-center">
+          <h1 className="text-5xl font-black tracking-widest text-transparent bg-clip-text bg-linear-to-r from-text to-text-muted mb-2 uppercase">
+            Forja
+          </h1>
+          <p className="text-sm font-medium text-text-muted text-center max-w-xs">
+            Forja tu disciplina. Registra tu progreso. Supera tus límites.
+          </p>
+        </div>
       </div>
 
       {/* Mitad inferior: Card de login (glassmorphism) flotante */}
@@ -68,7 +77,7 @@ export default function Login() {
             {isRegister ? 'Comienza tu viaje' : 'Bienvenido de vuelta'}
           </h2>
 
-          <form onSubmit={handleEmailAuth} className="flex flex-col gap-5">
+          <form onSubmit={handleEmailAuth} className="flex flex-col gap-4">
             <Input 
               type="email" 
               placeholder="Tu correo electrónico" 
@@ -96,21 +105,20 @@ export default function Login() {
               type="submit" 
               fullWidth 
               variant="highlight"
-              className="mt-2 h-14 rounded-2xl text-lg font-bold glow-highlight"
+              className="mt-1 h-14 rounded-2xl text-lg font-bold glow-highlight"
               disabled={loading}
             >
               {loading ? 'Cargando...' : (isRegister ? 'Crear Cuenta' : 'Entrar')}
             </Button>
           </form>
 
+          {/* Google Auth — comentado hasta activar en Firebase Console
           <div className="my-6 relative flex items-center justify-center">
             <div className="absolute inset-x-0 h-px bg-border/50" />
             <span className="relative bg-surface px-4 text-xs font-bold uppercase tracking-widest text-text-muted">
               O usa
             </span>
           </div>
-
-          {/* Botón de Google outline/secundario */}
           <button 
             type="button" 
             onClick={handleGoogleAuth}
@@ -124,8 +132,9 @@ export default function Login() {
             </svg>
             Continuar con Google
           </button>
+          */}
 
-          <div className="mt-8 text-center">
+          <div className="mt-6 text-center">
             <button 
               type="button" 
               className="text-text-muted hover:text-primary transition-colors text-sm font-semibold inline-flex items-center gap-1 active:scale-95"
@@ -145,3 +154,4 @@ export default function Login() {
     </div>
   );
 }
+

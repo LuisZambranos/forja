@@ -1,6 +1,6 @@
 # Roadmap — Forja
 
-## Fase 0 — MVP de hoy
+## Fase 0 — MVP de hoy ✅ completada
 
 Objetivo: ir al gimnasio y usarla.
 
@@ -10,19 +10,29 @@ Objetivo: ir al gimnasio y usarla.
 - [x] Ejercicios: creación manual en la cuenta propia
 - [x] Rutinas: armado básico (ejercicios + series objetivo + tiempo de descanso)
 - [x] **Modo Focus:** pantalla oscura, peso/reps por serie, temporizador de descanso, botón "Finalizar entrenamiento"
-- [x] **"Última vez que hiciste esto":** al abrir un ejercicio, mostrar peso/reps de la sesión anterior. Se mueve de "nice to have" a Fase 0 — es el dato que sostiene la sobrecarga progresiva y evita que el usuario reescriba de memoria
+- [x] **"Última vez que hiciste esto":** al abrir un ejercicio, mostrar peso/reps de la sesión anterior — **pendiente de confirmar que muestra el último valor real y no un promedio, ver auditoría en Fase 1**
 - [x] Wake Lock API (con fallback silencioso si el navegador no lo soporta), para que la pantalla no se apague a mitad de serie
 - [x] Escritura por lote (`writeBatch`) al finalizar la sesión — no una escritura por serie
-- [x] Catálogo inicial de ~35 ejercicios comunes, cargado como `is_global: true` vía script de seed (`scripts/seed-exercises.mjs`, corrido una vez con `firebase-admin`) — no se crean uno por uno desde el formulario
-- [x] Modo Focus: `target_sets` de la rutina pre-carga filas de input pero no bloquea — botón "+ Agregar serie" siempre disponible, y solo se guardan las filas con datos reales al finalizar
+- [x] Catálogo inicial de ~35 ejercicios comunes, cargado como `is_global: true` vía script de seed
+- [x] Modo Focus: `target_sets` de la rutina pre-carga filas de input pero no bloquea
+
+### Extras entregados fuera de plan (no estaban en el prompt de Fase 0)
+
+- Perfil de usuario completo (altura, peso inicial, sexo, avatar SVG dinámico)
+- Sistema de rachas gamificado (niveles, hitos, badge "hoy asegurado") — **pendiente de confirmar que la query esté acotada, ver auditoría en Fase 1**
+- Frases motivacionales diarias en el dashboard
+- Descanso diferenciado entre series vs. entre ejercicios en Modo Focus
+
+> **Nota de proceso:** de acá en adelante, cualquier funcionalidad fuera de lo pedido en el prompt se propone antes de implementarse, no se agrega directamente. Lo de arriba se queda — es buen trabajo — pero sirve como recordatorio de mantener el alcance bajo control de cara a las siguientes fases.
 
 ## Fase 1 — PWA, offline y progresión visual
 
 Objetivo: robustez contra el wifi del gimnasio, y ver el avance.
 
-- [ ] PWA instalable (manifest + service worker)
-- [ ] Persistencia offline nativa de Firestore (`enableIndexedDbPersistence`) — no reinventar una cola offline propia
-- [ ] Dashboard: volumen semanal, 1RM estimado (fórmula de Epley), calculado **en el cliente y cacheado** con TanStack Query — sin Cloud Functions todavía, para quedarte en plan Spark sin tarjeta asociada
+- [ ] Auditoría: confirmar que el cálculo de racha use una query acotada (no todo el historial) y que "última vez" traiga el valor real más reciente (no un promedio) — corregir si hace falta
+- [ ] PWA instalable de verdad (manifest + service worker vía `vite-plugin-pwa`) — lo que viste instalarse antes probablemente era el atajo genérico de Chrome, no esto
+- [ ] Persistencia offline nativa de Firestore (`persistentLocalCache` — la API vieja `enableIndexedDbPersistence` está deprecada) — no reinventar una cola offline propia
+- [ ] Dashboard: volumen semanal, 1RM estimado (fórmula de Epley), calculado **en el cliente sobre una query acotada y cacheado** con TanStack Query — sin Cloud Functions todavía, para quedarte en plan Spark sin tarjeta asociada
 - [ ] Alertas sonoras/vibración al finalizar el descanso
 
 ## Fase 2 — Flexibilidad extrema y gamificación

@@ -4,12 +4,13 @@ import { collection, addDoc, doc, getDoc, updateDoc, deleteDoc } from 'firebase/
 import { db } from '../../shared/firebase/config';
 import { useAuth } from '../../hooks/useAuth';
 import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { ExerciseModal } from '../exercises/components/ExerciseModal';
 import { ChevronLeft, Plus, X, Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import { useFirestoreQuery } from '../../hooks/useFirebaseQuery';
 import type { Exercise, RoutineExercise, Routine } from '../../shared/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { where } from 'firebase/firestore';
-import { Modal } from '../../components/ui/Modal';
 
 export default function RoutineBuilder() {
   const { user } = useAuth();
@@ -21,6 +22,8 @@ export default function RoutineBuilder() {
   const [name, setName] = useState('');
   const [routineExercises, setRoutineExercises] = useState<RoutineExercise[]>([]);
   const [scheduledDays, setScheduledDays] = useState<number[]>([]);
+  const [restBetweenSets, setRestBetweenSets] = useState(90);
+  const [restBetweenExercises, setRestBetweenExercises] = useState(180);
   const [loading, setLoading] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(isEditing);
   
@@ -32,11 +35,6 @@ export default function RoutineBuilder() {
   
   // Estados para nuevo ejercicio inline
   const [isCreateExerciseModalOpen, setIsCreateExerciseModalOpen] = useState(false);
-  const [newExName, setNewExName] = useState('');
-  const [newExMuscleGroup, setNewExMuscleGroup] = useState('');
-  const [newExEquipment, setNewExEquipment] = useState('');
-  const [creatingEx, setCreatingEx] = useState(false);
-  const [isNewCategory, setIsNewCategory] = useState(false);
 
   useEffect(() => {
     async function loadRoutine() {
@@ -49,6 +47,8 @@ export default function RoutineBuilder() {
           setName(data.name);
           setRoutineExercises(data.exercises || []);
           setScheduledDays(data.scheduled_days || []);
+          setRestBetweenSets(data.rest_between_sets || 90);
+          setRestBetweenExercises(data.rest_between_exercises || 180);
         } else {
           alert('Rutina no encontrada o no tienes permiso.');
           navigate('/');
@@ -119,8 +119,7 @@ export default function RoutineBuilder() {
     setRoutineExercises(prev => [...prev, {
       exercise_id: exerciseId,
       target_sets: 3,
-      target_reps: 10,
-      rest_seconds: 90
+      target_reps: 10
     }]);
   };
 
@@ -159,7 +158,9 @@ export default function RoutineBuilder() {
         owner_id: user.uid,
         is_public: false,
         exercises: routineExercises,
-        scheduled_days: scheduledDays
+        scheduled_days: scheduledDays,
+        rest_between_sets: restBetweenSets,
+        rest_between_exercises: restBetweenExercises
       };
 
       if (isEditing && id) {
@@ -188,42 +189,6 @@ export default function RoutineBuilder() {
       console.error(err);
       alert('Error al eliminar rutina');
       setLoading(false);
-    }
-  };
-
-  const handleCreateExercise = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !newExName || !newExMuscleGroup) return;
-    setCreatingEx(true);
-    
-    try {
-      const docRef = await addDoc(collection(db, 'exercises'), {
-        name: newExName,
-        muscle_group: newExMuscleGroup,
-        equipment: newExEquipment,
-        owner_id: user.uid,
-        is_global: false
-      });
-      
-      // Invalidate to fetch new list
-      await queryClient.invalidateQueries({ queryKey: ['exercises'] });
-      
-      // Add immediately to current routine
-      addExercise(docRef.id);
-      
-      // Reset & close
-      setNewExName('');
-      setNewExMuscleGroup('');
-      setNewExEquipment('');
-      setIsCreateExerciseModalOpen(false);
-      
-      // Expand the group so the user sees it in the list if they want
-      setExpandedGroups(prev => ({ ...prev, [newExMuscleGroup]: true }));
-    } catch (err) {
-      console.error(err);
-      alert('Error al crear ejercicio');
-    } finally {
-      setCreatingEx(false);
     }
   };
 
@@ -296,6 +261,38 @@ export default function RoutineBuilder() {
             </div>
           </div>
 
+          <div className="bg-surface border border-border rounded-2xl p-5 shadow-sm">
+            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block mb-3">Descansos Predeterminados</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block mb-1">Entre series</label>
+                <select 
+                  value={restBetweenSets}
+                  onChange={e => setRestBetweenSets(Number(e.target.value))}
+                  className="w-full h-12 bg-bg text-text text-sm font-bold rounded-xl px-3 border border-border outline-none transition-colors appearance-none"
+                >
+                  <option value={60}>1:00 min</option>
+                  <option value={90}>1:30 min</option>
+                  <option value={120}>2:00 min</option>
+                  <option value={180}>3:00 min</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block mb-1">Entre ejercicios</label>
+                <select 
+                  value={restBetweenExercises}
+                  onChange={e => setRestBetweenExercises(Number(e.target.value))}
+                  className="w-full h-12 bg-bg text-text text-sm font-bold rounded-xl px-3 border border-border outline-none transition-colors appearance-none"
+                >
+                  <option value={90}>1:30 min</option>
+                  <option value={120}>2:00 min</option>
+                  <option value={180}>3:00 min</option>
+                  <option value={240}>4:00 min</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-bold text-primary uppercase tracking-widest">Ejercicios Seleccionados</h2>
@@ -348,7 +345,7 @@ export default function RoutineBuilder() {
                         <h3 className="font-bold text-lg text-text leading-tight">{ex?.name || 'Cargando...'}</h3>
                       </div>
                       
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
                           <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Series</label>
                           <input 
@@ -367,17 +364,6 @@ export default function RoutineBuilder() {
                             onChange={e => updateExercise(i, 'target_reps', Number(e.target.value))}
                             className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
                             min={1}
-                          />
-                        </div>
-                        <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
-                          <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Desc (s)</label>
-                          <input 
-                            type="number" 
-                            value={re.rest_seconds}
-                            onChange={e => updateExercise(i, 'rest_seconds', Number(e.target.value))}
-                            className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
-                            step={15}
-                            min={0}
                           />
                         </div>
                       </div>
@@ -516,83 +502,15 @@ export default function RoutineBuilder() {
         </p>
       </Modal>
 
-      <Modal
+      <ExerciseModal
         isOpen={isCreateExerciseModalOpen}
-        onClose={() => !creatingEx && setIsCreateExerciseModalOpen(false)}
-        title="Nuevo Ejercicio"
-      >
-        <form id="create-ex-form" onSubmit={handleCreateExercise} className="flex flex-col gap-4">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest text-text-muted mb-1 block">Nombre</label>
-            <input 
-              type="text" 
-              required
-              value={newExName}
-              onChange={e => setNewExName(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none"
-              placeholder="Ej. Press Inclinado"
-            />
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-muted block">Músculo</label>
-              <button 
-                type="button" 
-                onClick={() => {
-                  setIsNewCategory(!isNewCategory);
-                  setNewExMuscleGroup('');
-                }}
-                className="text-xs text-primary font-bold hover:underline"
-              >
-                {isNewCategory ? 'Elegir existente' : '+ Crear categoría'}
-              </button>
-            </div>
-            
-            {isNewCategory ? (
-              <input 
-                type="text" 
-                required
-                value={newExMuscleGroup}
-                onChange={e => setNewExMuscleGroup(e.target.value)}
-                className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none"
-                placeholder="Nombre de la nueva categoría..."
-                autoFocus
-              />
-            ) : (
-              <select
-                required
-                value={newExMuscleGroup}
-                onChange={e => setNewExMuscleGroup(e.target.value)}
-                className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none appearance-none"
-              >
-                <option value="" disabled>Selecciona una categoría...</option>
-                {sortedGroups.map(group => (
-                  <option key={group} value={group}>{group}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest text-text-muted mb-1 block">Equipo (Opcional)</label>
-            <input 
-              type="text" 
-              value={newExEquipment}
-              onChange={e => setNewExEquipment(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none"
-              placeholder="Ej. Mancuernas, Barra..."
-            />
-          </div>
-          <Button 
-            type="submit" 
-            variant="highlight" 
-            fullWidth 
-            className="mt-2 h-12"
-            disabled={creatingEx || !newExName || !newExMuscleGroup}
-          >
-            {creatingEx ? 'Guardando...' : 'Guardar y Añadir'}
-          </Button>
-        </form>
-      </Modal>
+        onClose={() => setIsCreateExerciseModalOpen(false)}
+        mode="create"
+        onSuccess={(exerciseId) => {
+          addExercise(exerciseId);
+          setIsCreateExerciseModalOpen(false);
+        }}
+      />
     </div>
   );
 }

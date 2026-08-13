@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom';
 import { useFirestoreQuery } from '../../hooks/useFirebaseQuery';
 import type { Exercise } from '../../shared/types';
 import { useAuth } from '../../hooks/useAuth';
-import { where, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { where, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../shared/firebase/config';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../components/ui/Button';
 import { ChevronLeft, Plus, Search, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
+import { ExerciseModal } from './components/ExerciseModal';
 
 export default function ExercisesList() {
   const { user } = useAuth();
@@ -20,15 +21,12 @@ export default function ExercisesList() {
 
   const [editingEx, setEditingEx] = useState<Exercise | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editGroup, setEditGroup] = useState('');
-  const [editEq, setEditEq] = useState('');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
   const [deletingEx, setDeletingEx] = useState<Exercise | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   
   const [saving, setSaving] = useState(false);
-  const [isNewCategory, setIsNewCategory] = useState(false);
 
   const { data: myExercises = [], isLoading: loadingMy } = useFirestoreQuery<Exercise>(
     ['exercises', user?.uid],
@@ -81,30 +79,7 @@ export default function ExercisesList() {
 
   const openEdit = (ex: Exercise) => {
     setEditingEx(ex);
-    setEditName(ex.name);
-    setEditGroup(ex.muscle_group);
-    setEditEq(ex.equipment || '');
     setIsEditModalOpen(true);
-  };
-
-  const handleEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingEx) return;
-    setSaving(true);
-    try {
-      await updateDoc(doc(db, 'exercises', editingEx.id), {
-        name: editName,
-        muscle_group: editGroup,
-        equipment: editEq
-      });
-      await queryClient.invalidateQueries({ queryKey: ['exercises'] });
-      setIsEditModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      alert('Error al actualizar');
-    } finally {
-      setSaving(false);
-    }
   };
 
   const handleDelete = async () => {
@@ -131,11 +106,14 @@ export default function ExercisesList() {
           </Link>
           <h1 className="text-2xl font-black text-text tracking-wide">Ejercicios</h1>
         </div>
-        <Link to="/exercises/new">
-          <Button variant="highlight" size="sm" className="rounded-xl font-bold px-4 h-10 glow-highlight">
-            <Plus className="w-5 h-5 mr-1" /> Nuevo
-          </Button>
-        </Link>
+        <Button 
+          variant="highlight" 
+          size="sm" 
+          className="rounded-xl font-bold px-4 h-10 glow-highlight"
+          onClick={() => setIsCreateModalOpen(true)}
+        >
+          <Plus className="w-5 h-5 mr-1" /> Nuevo
+        </Button>
       </header>
 
       <div className="px-4 pb-6 flex-1 flex flex-col">
@@ -222,76 +200,20 @@ export default function ExercisesList() {
         )}
       </div>
 
+      {/* Modal Crear */}
+      <ExerciseModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        mode="create"
+      />
+
       {/* Modal Editar */}
-      <Modal
+      <ExerciseModal
         isOpen={isEditModalOpen}
-        onClose={() => !saving && setIsEditModalOpen(false)}
-        title="Editar Ejercicio"
-      >
-        <form onSubmit={handleEdit} className="flex flex-col gap-4">
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest text-text-muted mb-1 block">Nombre</label>
-            <input 
-              type="text" 
-              required
-              value={editName}
-              onChange={e => setEditName(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none"
-            />
-          </div>
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-muted block">Grupo Muscular</label>
-              <button 
-                type="button" 
-                onClick={() => {
-                  setIsNewCategory(!isNewCategory);
-                  setEditGroup('');
-                }}
-                className="text-xs text-primary font-bold hover:underline"
-              >
-                {isNewCategory ? 'Elegir existente' : '+ Crear categoría'}
-              </button>
-            </div>
-            
-            {isNewCategory ? (
-              <input 
-                type="text" 
-                required
-                value={editGroup}
-                onChange={e => setEditGroup(e.target.value)}
-                className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none"
-                placeholder="Nombre de la nueva categoría..."
-                autoFocus
-              />
-            ) : (
-              <select
-                required
-                value={editGroup}
-                onChange={e => setEditGroup(e.target.value)}
-                className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none appearance-none"
-              >
-                <option value="" disabled>Selecciona una categoría...</option>
-                {sortedGroups.map(group => (
-                  <option key={group} value={group}>{group}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          <div>
-            <label className="text-xs font-bold uppercase tracking-widest text-text-muted mb-1 block">Equipamiento</label>
-            <input 
-              type="text" 
-              value={editEq}
-              onChange={e => setEditEq(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none"
-            />
-          </div>
-          <Button type="submit" variant="primary" fullWidth className="mt-2 h-12" disabled={saving || !editName || !editGroup}>
-            {saving ? 'Guardando...' : 'Guardar Cambios'}
-          </Button>
-        </form>
-      </Modal>
+        onClose={() => setIsEditModalOpen(false)}
+        mode="edit"
+        initialData={editingEx}
+      />
 
       {/* Modal Eliminar */}
       <Modal

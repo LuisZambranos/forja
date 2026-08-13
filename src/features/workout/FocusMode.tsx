@@ -18,8 +18,8 @@ import { useFirestoreQuery } from '../../hooks/useFirebaseQuery';
 type Phase = 'intro' | 'active' | 'resting';
 
 interface LastTimeStats {
-  avgWeight: number;
-  avgReps: number;
+  weight: number;
+  reps: number;
   totalSets: number;
 }
 
@@ -35,18 +35,20 @@ async function fetchLastTime(uid: string, exerciseId: string): Promise<LastTimeS
   const q = query(
     collection(db, 'workout_sessions'),
     where('owner_id', '==', uid),
+    where('exercise_ids', 'array-contains', exerciseId),
     orderBy('finished_at', 'desc'),
-    limit(10)
+    limit(1)
   );
   const snaps = await getDocs(q);
-  for (const d of snaps.docs) {
-    const session = d.data() as WorkoutSession;
-    const matching = (session.sets || []).filter(s => s.exercise_id === exerciseId);
-    if (matching.length > 0) {
-      const avgWeight = matching.reduce((a, s) => a + s.weight, 0) / matching.length;
-      const avgReps   = matching.reduce((a, s) => a + s.reps, 0)   / matching.length;
-      return { avgWeight: Math.round(avgWeight), avgReps: Math.round(avgReps), totalSets: matching.length };
-    }
+  if (snaps.empty) return null;
+  
+  const session = snaps.docs[0].data() as WorkoutSession;
+  const matching = (session.sets || []).filter(s => s.exercise_id === exerciseId);
+  
+  if (matching.length > 0) {
+    // Tomamos la serie de mayor peso
+    const bestSet = matching.reduce((prev, curr) => (curr.weight > prev.weight ? curr : prev));
+    return { weight: bestSet.weight, reps: bestSet.reps, totalSets: matching.length };
   }
   return null;
 }
@@ -74,6 +76,7 @@ export default function FocusMode() {
   const [restTimer, setRestTimer] = useState(0);
   const [saving, setSaving] = useState(false);
   const [startedAt] = useState(Date.now());
+  const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null);
 
   // Caché de ejercicios
   const { data: myExercises = [] } = useFirestoreQuery<Exercise>(
@@ -115,8 +118,8 @@ export default function FocusMode() {
       .then(res => {
         setLastTime(res);
         if (res) {
-          setWeight(String(res.avgWeight));
-          setReps(String(res.avgReps));
+          setWeight(String(res.weight));
+          setReps(String(res.reps));
         } else {
           setWeight('');
           setReps(String(ex.target_reps));
@@ -137,12 +140,30 @@ export default function FocusMode() {
     if (phase !== 'resting' || restTimer <= 0) return;
     const interval = setInterval(() => {
       setRestTimer(prev => {
-        if (prev <= 1) { clearInterval(interval); return 0; }
+        if (prev <= 1) { 
+          clearInterval(interval); 
+          if ('vibrate' in navigator) {
+            navigator.vibrate([200, 100, 200]);
+          }
+          if (audioCtx) {
+            try {
+              const osc = audioCtx.createOscillator();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+              osc.connect(audioCtx.destination);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.2);
+            } catch (e) {
+              console.warn('AudioContext failed to play beep');
+            }
+          }
+          return 0; 
+        }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [phase, restTimer]);
+  }, [phase, restTimer, audioCtx]);
 
   if (!routine) {
     return (
@@ -171,7 +192,13 @@ export default function FocusMode() {
     setCompletedSets(prev => [...prev, newSet]);
 
     // Iniciar descanso
-    setRestTimer(currentRoutineEx.rest_seconds || 90);
+    let nextRest = 90;
+    if (isLastSet) {
+      nextRest = routine.rest_between_exercises ?? 180;
+    } else {
+      nextRest = routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90;
+    }
+    setRestTimer(nextRest);
     setPhase('resting');
   };
 
@@ -201,15 +228,52 @@ export default function FocusMode() {
     setSaving(true);
     try {
       const batch = writeBatch(db);
-      const ref = doc(collection(db, 'workout_sessions'));
-      batch.set(ref, {
+      const sessionRef = doc(collection(db, 'workout_sessions'));
+      const exerciseIds = Array.from(new Set(completedSets.map(s => s.exercise_id)));
+      
+      batch.set(sessionRef, {
+        id: sessionRef.id,
         owner_id: user.uid,
         routine_id: routine.id,
         started_at: startedAt,
         finished_at: Date.now(),
         duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
-        sets: completedSets
+        sets: completedSets,
+        exercise_ids: exerciseIds
       });
+
+      // Lógica de Racha
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const currentStreak = userData.current_streak || 0;
+        const lastWorkoutDateStr = userData.last_workout_date || '';
+        
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        let newStreak = currentStreak;
+        let newDate = todayStr;
+
+        if (lastWorkoutDateStr !== todayStr) {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+          
+          if (lastWorkoutDateStr === yesterdayStr) {
+            newStreak = currentStreak + 1;
+          } else {
+            newStreak = 1;
+          }
+        }
+        
+        batch.set(userRef, {
+          current_streak: newStreak,
+          last_workout_date: newDate
+        }, { merge: true });
+      }
+
       await batch.commit();
       finishWorkout();
       navigate('/');
@@ -264,13 +328,13 @@ export default function FocusMode() {
             ) : lastTime ? (
               <div className="flex gap-6">
                 <div>
-                  <p className="text-3xl font-black text-text">{lastTime.avgWeight}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
-                  <p className="text-xs text-text-muted mt-1">Peso promedio</p>
+                  <p className="text-3xl font-black text-text">{lastTime.weight}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
+                  <p className="text-xs text-text-muted mt-1">Peso</p>
                 </div>
                 <div className="w-px bg-border" />
                 <div>
-                  <p className="text-3xl font-black text-text">{lastTime.avgReps}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
-                  <p className="text-xs text-text-muted mt-1">Reps promedio</p>
+                  <p className="text-3xl font-black text-text">{lastTime.reps}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
+                  <p className="text-xs text-text-muted mt-1">Reps</p>
                 </div>
                 <div className="w-px bg-border" />
                 <div>
@@ -286,7 +350,7 @@ export default function FocusMode() {
           {/* Target */}
           <p className="text-center text-text-muted text-sm mb-8">
             Meta: <span className="text-text font-bold">{targetSets} series × {currentRoutineEx.target_reps} reps</span>
-            {' · '}Descanso: <span className="text-text font-bold">{currentRoutineEx.rest_seconds}s</span>
+            {' · '}Descanso: <span className="text-text font-bold">{routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90}s</span>
           </p>
         </div>
 
@@ -296,7 +360,22 @@ export default function FocusMode() {
           fullWidth
           size="lg"
           className="rounded-2xl h-16 text-xl font-black glow-highlight"
-          onClick={() => setPhase('active')}
+          onClick={() => {
+            // Inicializar AudioContext en primera interacción de usuario
+            if (!audioCtx) {
+              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              // Desbloquear tocando un sonido vacío
+              const osc = ctx.createOscillator();
+              const gainNode = ctx.createGain();
+              gainNode.gain.value = 0;
+              osc.connect(gainNode);
+              gainNode.connect(ctx.destination);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.001);
+              setAudioCtx(ctx);
+            }
+            setPhase('active');
+          }}
         >
           <Play className="mr-2 fill-current" /> Empezar serie 1
         </Button>
@@ -333,7 +412,7 @@ export default function FocusMode() {
           {/* Sugerencia de la última vez */}
           {lastTime && (
             <p className="text-center text-sm text-text-muted">
-              Última vez: <span className="text-text font-bold">{lastTime.avgWeight}kg × {lastTime.avgReps} reps</span>
+              Última vez: <span className="text-text font-bold">{lastTime.weight}kg × {lastTime.reps} reps</span>
             </p>
           )}
 
@@ -349,7 +428,7 @@ export default function FocusMode() {
                 inputMode="decimal"
                 value={weight}
                 onChange={e => setWeight(e.target.value)}
-                placeholder={lastTime ? String(lastTime.avgWeight) : '0'}
+                placeholder={lastTime ? String(lastTime.weight) : '0'}
                 className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
                   border-2 border-border focus:outline-none
                   placeholder:text-border transition-colors"
@@ -370,7 +449,7 @@ export default function FocusMode() {
                 inputMode="numeric"
                 value={reps}
                 onChange={e => setReps(e.target.value)}
-                placeholder={lastTime ? String(lastTime.avgReps) : String(targetSets)}
+                placeholder={lastTime ? String(lastTime.reps) : String(targetSets)}
                 className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
                   border-2 border-border focus:outline-none
                   placeholder:text-border transition-colors"

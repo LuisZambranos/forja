@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "workout_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "owner_id", "order": "ASCENDING" },
+        { "fieldPath": "exercise_ids", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "finished_at", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

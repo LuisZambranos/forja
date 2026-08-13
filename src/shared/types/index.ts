@@ -6,6 +6,8 @@ export interface User {
   height_cm?: number;
   initial_weight_kg?: number;
   sex?: 'male' | 'female';
+  current_streak?: number;
+  last_workout_date?: string;
   settings: {
     auto_timer: boolean;
   };
@@ -24,7 +26,7 @@ export interface RoutineExercise {
   exercise_id: string;
   target_sets: number;
   target_reps: number;
-  rest_seconds: number;
+  rest_seconds?: number; // Mantenido por compatibilidad con rutinas antiguas
 }
 
 export interface Routine {
@@ -34,6 +36,8 @@ export interface Routine {
   is_public: boolean;
   exercises: RoutineExercise[];
   scheduled_days?: number[];
+  rest_between_sets?: number;
+  rest_between_exercises?: number;
 }
 
 export interface WorkoutSet {
