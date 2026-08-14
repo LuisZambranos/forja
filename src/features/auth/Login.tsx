@@ -52,11 +52,11 @@ export default function Login() {
       {/* Mitad superior: Logo y branding */}
       <div className="flex flex-col items-center justify-center py-8 px-6 relative z-10 gap-3">
         {/* Logo container: div decorativo con el hacha sin fondo */}
-        <div className="w-24 h-24 bg-linear-to-br from-primary/20 to-highlight/10 rounded-3xl border border-primary/25 flex items-center justify-center shadow-2xl glow-primary backdrop-blur-sm">
+        <div className="w-24 h-24 bg-linear-to-br from-primary/20 to-highlight/10 rounded-3xl border border-primary/25 flex items-center justify-center shadow-2xl glow-primary backdrop-blur-sm overflow-hidden">
           <img 
             src={logoNoBg} 
             alt="Forja Logo" 
-            className="w-22 h-22 object-contain drop-shadow-[0_0_14px_rgba(139,92,246,0.6)]" 
+            className="w-full h-full object-contain scale-125 drop-shadow-[0_0_14px_rgba(139,92,246,0.6)]" 
           />
         </div>
 
