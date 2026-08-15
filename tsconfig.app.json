@@ -23,6 +23,7 @@
     "noFallthroughCasesInSwitch": true,
 
     /* Alias de Paths para Clean Architecture */
+    "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
       "@core/*": ["src/core/*"],

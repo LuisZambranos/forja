@@ -23,7 +23,7 @@ export function useCreateRoutine() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: Omit<Routine, 'id'>) => createRoutine(data),
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['routines'] });
     }
   });
