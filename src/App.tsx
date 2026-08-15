@@ -1,16 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from '@ui/hooks/useAuth';
 import logoNoBg from './assets/logo-removebg.png';
-import { BottomNav } from './components/layout/BottomNav';
-import Login from './features/auth/Login';
-import Dashboard from './features/dashboard/Dashboard';
-import ExercisesList from './features/exercises/ExercisesList';
-import RoutineBuilder from './features/routines/RoutineBuilder';
-import RoutinesHome from './features/routines/RoutinesHome';
-import FocusMode from './features/workout/FocusMode';
-import Profile from './features/profile/Profile';
-import ProgressHub from './features/progress/ProgressHub';
+import { BottomNav } from '@ui/components/layout/BottomNav';
+import Login from '@ui/features/auth/Login';
+import Dashboard from '@ui/features/dashboard/Dashboard';
+import ExercisesList from '@ui/features/exercises/ExercisesList';
+import RoutineBuilder from '@ui/features/routines/RoutineBuilder';
+import RoutinesHome from '@ui/features/routines/RoutinesHome';
+import FocusMode from '@ui/features/workout/FocusMode';
+import Profile from '@ui/features/profile/Profile';
+import ProgressHub from '@ui/features/progress/ProgressHub';
 
 const queryClient = new QueryClient({
   defaultOptions: {

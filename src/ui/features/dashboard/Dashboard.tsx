@@ -1,0 +1,88 @@
+import logoNoBg from '../../../assets/logo-removebg.png';
+import { useAuth } from '@ui/hooks/useAuth';
+import { useUserProfile } from '@ui/hooks/useUser';
+import { useMyRoutines } from '@ui/hooks/useRoutines';
+import { useWorkoutSessions } from '@ui/hooks/useWorkout';
+import { StreakCard } from './components/StreakCard';
+import { DailyQuoteCard } from './components/DailyQuoteCard';
+import { ProgressPreviewCard } from './components/ProgressPreviewCard';
+import { WorkoutCTA } from './components/WorkoutCTA';
+import { RecentHistory } from './components/RecentHistory';
+
+function getGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Buenos días';
+  if (h < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+export default function Dashboard() {
+  const { user } = useAuth();
+
+  // Perfil
+  const { data: userProfile = null, error: profileError } = useUserProfile(user?.uid);
+  if (profileError) {
+    console.error('[Dashboard] profileError presente:', profileError);
+  }
+
+  // Rutinas
+  const { data: routines = [], isLoading: loadingRoutines } = useMyRoutines(user?.uid);
+
+  // Sesiones (últimas 8 semanas)
+  const EIGHT_WEEKS_MS = 8 * 7 * 24 * 60 * 60 * 1000;
+  const { 
+    data: sessions = [], 
+    isLoading: loadingSessions, 
+    error: sessionsError, 
+    refetch: refetchSessions 
+  } = useWorkoutSessions(user?.uid, EIGHT_WEEKS_MS);
+
+  const recentSessions = sessions.slice(0, 3);
+
+  const todayDayOfWeek = new Date().getDay();
+  const todaysRoutine = routines.find(r => r.scheduled_days?.includes(todayDayOfWeek));
+
+  return (
+    <div className="max-w-lg mx-auto min-h-dvh flex flex-col">
+
+      {/* ── AppBar ── */}
+      <header className="flex items-center justify-between px-4 pt-4 pb-4">
+        <div className="flex items-center gap-1">
+          <img src={logoNoBg} alt="Forja Logo" className="w-14 h-14 object-contain" />
+          <span className="text-xl font-black tracking-widest text-primary uppercase">Forja</span>
+        </div>
+        <div className="text-right">
+          <p className="text-xs text-text-muted">{getGreeting()}</p>
+          <p className="text-sm font-bold text-text truncate max-w-37.5">{user?.display_name}</p>
+        </div>
+      </header>
+
+      {/* Separador */}
+      <div className="h-px bg-linear-to-r from-transparent via-primary/40 to-transparent mx-4 mb-6" />
+
+      <div className="flex-1 px-4 pb-24 flex flex-col gap-5">
+
+        {/* ── Racha ── */}
+        <StreakCard 
+          currentStreak={userProfile?.current_streak || 0}
+          lastWorkoutDate={userProfile?.last_workout_date || ''}
+        />
+
+        {/* ── Frase del día ── */}
+        <DailyQuoteCard />
+
+
+        {/* ── CTA: Rutina de hoy ── */}
+        <WorkoutCTA loadingRoutines={loadingRoutines} todaysRoutine={todaysRoutine} routines={routines} />
+
+        {/* ── Card de progreso ── */}
+        <ProgressPreviewCard sessions={sessions} error={sessionsError} refetch={refetchSessions} />
+
+        {/* ── Historial reciente (máx 3) ── */}
+        <RecentHistory loadingSessions={loadingSessions} recentSessions={recentSessions} error={sessionsError} refetch={refetchSessions} />
+
+      </div>
+    </div>
+  );
+}
+
