@@ -10,7 +10,7 @@ import RoutineBuilder from './features/routines/RoutineBuilder';
 import RoutinesHome from './features/routines/RoutinesHome';
 import FocusMode from './features/workout/FocusMode';
 import Profile from './features/profile/Profile';
-import Progress from './features/progress/Progress';
+import ProgressHub from './features/progress/ProgressHub';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -120,7 +120,7 @@ export default function App() {
               <ProtectedRoute><Profile /></ProtectedRoute>
             } />
             <Route path="/progress" element={
-              <ProtectedRoute><Progress /></ProtectedRoute>
+              <ProtectedRoute><ProgressHub /></ProtectedRoute>
             } />
           </Routes>
         </AppShell>

@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { Home, Dumbbell, ClipboardList, User } from 'lucide-react';
+import { Home, Dumbbell, ClipboardList, User, Activity } from 'lucide-react';
 
 const tabs = [
   { to: '/',           icon: Home,          label: 'Inicio'    },
   { to: '/routines',   icon: ClipboardList, label: 'Rutinas'   },
   { to: '/exercises',  icon: Dumbbell,      label: 'Ejercicios'},
+  { to: '/progress',   icon: Activity,      label: 'Progreso'  },
   { to: '/profile',    icon: User,          label: 'Perfil'    },
 ];
 

@@ -5,10 +5,10 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth } from '../../shared/firebase/config';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import { Card } from '../../components/ui/Card';
-import { LogOut, Save } from 'lucide-react';
+import { LogOut, Save, Bell } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { User } from '../../shared/types';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 const AVATAR_MALE = (
   <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -53,6 +53,7 @@ export default function Profile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const { permission, requestPermission } = usePushNotifications();
 
   useEffect(() => {
     if (!user) return;
@@ -143,40 +144,50 @@ export default function Profile() {
       </div>
 
       {/* Campos */}
-      <div className="flex flex-col gap-4 mb-8">
+      <div className="flex flex-col gap-4 mb-6">
+        <Input
+          label="Correo Electrónico"
+          value={user?.email || ''}
+          disabled
+          readOnly
+        />
         <Input
           label="Nombre"
           placeholder="¿Cómo te llaman?"
           value={profile.display_name || ''}
           onChange={e => setProfile(p => ({ ...p, display_name: e.target.value }))}
         />
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Altura (cm)"
-            type="number"
-            placeholder="175"
-            value={profile.height_cm || ''}
-            onChange={e => setProfile(p => ({ ...p, height_cm: Number(e.target.value) }))}
-          />
-          <Input
-            label="Peso inicial (kg)"
-            type="number"
-            placeholder="80"
-            value={profile.initial_weight_kg || ''}
-            onChange={e => setProfile(p => ({ ...p, initial_weight_kg: Number(e.target.value) }))}
-          />
-        </div>
+        <Input
+          label="Altura (cm)"
+          type="number"
+          placeholder="175"
+          value={profile.height_cm || ''}
+          onChange={e => setProfile(p => ({ ...p, height_cm: Number(e.target.value) }))}
+        />
       </div>
 
-      {/* Próximamente */}
-      <Card className="mb-6 border-dashed border-border/50">
-        <p className="text-xs text-text-muted/60 uppercase tracking-widest font-bold mb-2">Próximamente</p>
-        <ul className="text-sm text-text-muted space-y-1">
-          <li>• Registro semanal de peso</li>
-          <li>• Historial de medidas corporales</li>
-          <li>• Fotos de progreso</li>
-        </ul>
-      </Card>
+      {/* Configuración Notificaciones */}
+      <div className="bg-surface border border-border p-4 rounded-2xl mb-8 flex items-center justify-between">
+        <div className="flex-1 pr-4">
+          <h3 className="text-sm font-bold text-text flex items-center gap-2">
+            <Bell className="w-4 h-4 text-highlight" /> Notificaciones Push
+          </h3>
+          <p className="text-xs text-text-muted mt-1 leading-relaxed">
+            Recordatorios semanales para no perder el hábito.
+          </p>
+        </div>
+        <Button 
+          variant={permission === 'granted' ? 'secondary' : 'highlight'}
+          size="sm"
+          onClick={requestPermission}
+          disabled={permission === 'granted' || permission === 'denied'}
+          className={permission === 'granted' ? 'opacity-50' : ''}
+        >
+          {permission === 'granted' ? 'Activadas' : permission === 'denied' ? 'Bloqueadas' : 'Activar'}
+        </Button>
+      </div>
+
+
 
       <Button
         variant="highlight"

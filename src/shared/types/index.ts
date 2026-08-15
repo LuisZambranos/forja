@@ -57,3 +57,22 @@ export interface WorkoutSession {
   duration_seconds: number;
   sets: WorkoutSet[];
 }
+
+export interface BodyMetric {
+  id: string;
+  owner_id: string;
+  date: string;       // Formato YYYY-MM-DD
+  weight_kg?: number;
+  body_fat_pct?: number;
+  measurements?: {
+    arm?: number;
+    chest?: number;
+    waist?: number;
+    legs?: number;
+  };
+  photos?: {
+    front?: string;
+    side?: string;
+    back?: string;
+  };
+}
