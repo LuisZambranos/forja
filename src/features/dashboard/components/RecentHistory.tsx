@@ -1,10 +1,12 @@
-import { Clock } from 'lucide-react';
+import { Clock, RefreshCw } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import type { WorkoutSession } from '../../../shared/types';
 
 interface RecentHistoryProps {
   loadingSessions: boolean;
   recentSessions: WorkoutSession[];
+  error?: Error | null;
+  refetch?: () => void;
 }
 
 function formatRelativeDate(ts: number): string {
@@ -18,7 +20,7 @@ function formatRelativeDate(ts: number): string {
   return `Hace ${days} días`;
 }
 
-export function RecentHistory({ loadingSessions, recentSessions }: RecentHistoryProps) {
+export function RecentHistory({ loadingSessions, recentSessions, error, refetch }: RecentHistoryProps) {
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
@@ -28,6 +30,22 @@ export function RecentHistory({ loadingSessions, recentSessions }: RecentHistory
       {loadingSessions ? (
         <div className="flex flex-col gap-2">
           {[1, 2].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}
+        </div>
+      ) : error ? (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 text-center">
+          <p className="text-sm text-red-400 font-medium mb-2">
+            No se pudo cargar el historial.
+          </p>
+          {refetch && (
+            <button
+              onClick={() => refetch()}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-red-400 
+                bg-red-500/15 hover:bg-red-500/25 px-3 py-1.5 rounded-full transition-colors"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Reintentar
+            </button>
+          )}
         </div>
       ) : recentSessions.length === 0 ? (
         <p className="text-sm text-text-muted italic px-1">
@@ -56,3 +74,4 @@ export function RecentHistory({ loadingSessions, recentSessions }: RecentHistory
     </section>
   );
 }
+

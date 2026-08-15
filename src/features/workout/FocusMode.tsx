@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   collection, doc, writeBatch, getDoc,
-  query, where, orderBy, limit, getDocs
+  query, where, orderBy, limit, getDocs, increment
 } from 'firebase/firestore';
 import { db } from '../../shared/firebase/config';
 import { useAuth } from '../../hooks/useAuth';
@@ -11,6 +11,7 @@ import type { Routine, Exercise, WorkoutSession, WorkoutSet } from '../../shared
 import { Button } from '../../components/ui/Button';
 import { Play, Timer, ChevronRight, Check, X } from 'lucide-react';
 import { useFirestoreQuery } from '../../hooks/useFirebaseQuery';
+import { useQueryClient } from '@tanstack/react-query';
 
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
@@ -60,6 +61,7 @@ export default function FocusMode() {
   const { routineId } = useParams<{ routineId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { finishWorkout } = useWorkoutStore();
 
@@ -73,7 +75,8 @@ export default function FocusMode() {
   const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
   const [lastTime, setLastTime] = useState<LastTimeStats | null>(null);
   const [loadingLast, setLoadingLast] = useState(false);
-  const [restTimer, setRestTimer] = useState(0);
+  const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
+  const [restDisplay, setRestDisplay] = useState(0);
   const [saving, setSaving] = useState(false);
   const [startedAt] = useState(Date.now());
   const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null);
@@ -135,35 +138,54 @@ export default function FocusMode() {
     });
   };
 
-  // Timer de descanso
+  // Timer de descanso basado en timestamp real
   useEffect(() => {
-    if (phase !== 'resting' || restTimer <= 0) return;
+    if (phase !== 'resting' || !restEndsAt) return;
+
+    const calcRemaining = () => Math.max(0, Math.ceil((restEndsAt - Date.now()) / 1000));
+
+    // Recálculo inicial inmediato
+    setRestDisplay(calcRemaining());
+
     const interval = setInterval(() => {
-      setRestTimer(prev => {
-        if (prev <= 1) { 
-          clearInterval(interval); 
-          if ('vibrate' in navigator) {
-            navigator.vibrate([200, 100, 200]);
-          }
-          if (audioCtx) {
-            try {
-              const osc = audioCtx.createOscillator();
-              osc.type = 'sine';
-              osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-              osc.connect(audioCtx.destination);
-              osc.start();
-              osc.stop(audioCtx.currentTime + 0.2);
-            } catch (e) {
-              console.warn('AudioContext failed to play beep');
-            }
-          }
-          return 0; 
+      const remaining = calcRemaining();
+      setRestDisplay(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        // Vibrar
+        if ('vibrate' in navigator) {
+          navigator.vibrate([200, 100, 200]);
         }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [phase, restTimer, audioCtx]);
+        // Beep
+        if (audioCtx) {
+          try {
+            const osc = audioCtx.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+          } catch (e) {
+            console.warn('AudioContext failed to play beep');
+          }
+        }
+      }
+    }, 250);
+
+    // Recálculo forzado al volver de segundo plano
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setRestDisplay(calcRemaining());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [phase, restEndsAt, audioCtx]);
 
   if (!routine) {
     return (
@@ -198,7 +220,8 @@ export default function FocusMode() {
     } else {
       nextRest = routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90;
     }
-    setRestTimer(nextRest);
+    setRestEndsAt(Date.now() + nextRest * 1000);
+    setRestDisplay(nextRest);
     setPhase('resting');
   };
 
@@ -267,14 +290,22 @@ export default function FocusMode() {
             newStreak = 1;
           }
         }
+        const sessionTonnage = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
         
         batch.set(userRef, {
           current_streak: newStreak,
-          last_workout_date: newDate
+          last_workout_date: newDate,
+          lifetime_tonnage: increment(sessionTonnage)
         }, { merge: true });
       }
 
       await batch.commit();
+      
+      // Invalidar las cachés para que el Dashboard (Rachas, Volumen, Historial) se actualice al instante
+      queryClient.invalidateQueries({ queryKey: ['profile', user.uid] });
+      queryClient.invalidateQueries({ queryKey: ['stats_sessions', user.uid] });
+      queryClient.invalidateQueries({ queryKey: ['routines', user.uid] });
+
       finishWorkout();
       navigate('/');
     } catch {
@@ -494,13 +525,13 @@ export default function FocusMode() {
 
       {/* Timer central */}
       <div className="flex flex-col items-center gap-4">
-        {restTimer > 0 ? (
+        {restDisplay > 0 ? (
           <>
             <div className="w-40 h-40 rounded-full border-4 border-highlight/30 flex items-center justify-center
               bg-highlight/5 relative">
               <Timer className="absolute top-4 left-1/2 -translate-x-1/2 w-5 h-5 text-highlight" />
               <span className="text-5xl font-black text-highlight font-mono">
-                {formatTime(restTimer)}
+                {formatTime(restDisplay)}
               </span>
             </div>
             <p className="text-text-muted text-sm">Descansando…</p>
@@ -534,9 +565,9 @@ export default function FocusMode() {
               : `Serie ${setIndex + 2} de ${targetSets}`}
         </Button>
 
-        {restTimer > 0 && (
+        {restDisplay > 0 && (
           <button
-            onClick={() => setRestTimer(0)}
+            onClick={() => { setRestEndsAt(null); setRestDisplay(0); }}
             className="text-center text-sm text-text-muted underline underline-offset-2"
           >
             Saltar descanso

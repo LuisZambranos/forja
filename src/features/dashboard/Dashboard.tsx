@@ -1,7 +1,9 @@
 import logoNoBg from '../../assets/logo-removebg.png';
 import { useAuth } from '../../hooks/useAuth';
 import { useFirestoreQuery } from '../../hooks/useFirebaseQuery';
-import { where, orderBy } from 'firebase/firestore';
+import { where, orderBy, doc, getDoc, FirestoreError } from 'firebase/firestore';
+import { db } from '../../shared/firebase/config';
+import { useQuery } from '@tanstack/react-query';
 import type { Routine, WorkoutSession, User } from '../../shared/types';
 import { StreakCard } from './components/StreakCard';
 import { DailyQuoteCard } from './components/DailyQuoteCard';
@@ -19,33 +21,52 @@ function getGreeting(): string {
 export default function Dashboard() {
   const { user } = useAuth();
 
-  const { data: profiles = [] } = useFirestoreQuery<User>(
-    ['profile', user?.uid],
-    'users',
-    user?.uid ? [where('uid', '==', user.uid)] : [],
-    1000 * 60 * 30
-  );
-  
-  const userProfile = profiles[0] || null;
+  // Perfil: leemos el doc directamente por ID (el UID es el doc ID)
+  const { data: userProfile = null, error: profileError } = useQuery({
+    queryKey: ['profile', user?.uid],
+    queryFn: async () => {
+      if (!user?.uid) return null;
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        return snap.exists() ? (snap.data() as User) : null;
+      } catch (err: unknown) {
+        const code = (err as FirestoreError)?.code ?? 'unknown';
+        const message = (err as FirestoreError)?.message ?? String(err);
+        console.error(
+          `[Dashboard] Error al leer perfil users/${user?.uid} (code: ${code}):`,
+          message
+        );
+        throw err;
+      }
+    },
+    staleTime: 1000 * 60 * 30,
+    enabled: !!user?.uid,
+  });
+
+  if (profileError) {
+    console.error('[Dashboard] profileError presente:', profileError);
+  }
 
   const { data: routines = [], isLoading: loadingRoutines } = useFirestoreQuery<Routine>(
     ['routines', user?.uid],
     'routines',
-    [where('owner_id', '==', user?.uid)],
-    1000 * 60 * 5
+    user?.uid ? [where('owner_id', '==', user?.uid)] : [],
+    1000 * 60 * 5,
+    !!user?.uid
   );
 
   // Consultamos sesiones de las últimas 8 semanas para métricas y stats (1RM, Volumen)
   const eightWeeksAgo = Date.now() - (8 * 7 * 24 * 60 * 60 * 1000);
-  const { data: sessions = [], isLoading: loadingSessions } = useFirestoreQuery<WorkoutSession>(
+  const { data: sessions = [], isLoading: loadingSessions, error: sessionsError, refetch: refetchSessions } = useFirestoreQuery<WorkoutSession>(
     ['stats_sessions', user?.uid],
     'workout_sessions',
-    [
+    user?.uid ? [
       where('owner_id', '==', user?.uid), 
       where('finished_at', '>=', eightWeeksAgo), 
       orderBy('finished_at', 'desc')
-    ],
-    1000 * 60 * 15 // Cache de 15 minutos según Fase 1
+    ] : [],
+    1000 * 60 * 15,
+    !!user?.uid
   );
 
   const recentSessions = sessions.slice(0, 3);
@@ -87,10 +108,10 @@ export default function Dashboard() {
         <WorkoutCTA loadingRoutines={loadingRoutines} todaysRoutine={todaysRoutine} routines={routines} />
 
         {/* ── Card de progreso ── */}
-        <ProgressPreviewCard sessions={sessions} />
+        <ProgressPreviewCard sessions={sessions} error={sessionsError} refetch={refetchSessions} />
 
         {/* ── Historial reciente (máx 3) ── */}
-        <RecentHistory loadingSessions={loadingSessions} recentSessions={recentSessions} />
+        <RecentHistory loadingSessions={loadingSessions} recentSessions={recentSessions} error={sessionsError} refetch={refetchSessions} />
 
       </div>
     </div>

@@ -8,6 +8,7 @@ export interface User {
   sex?: 'male' | 'female';
   current_streak?: number;
   last_workout_date?: string;
+  lifetime_tonnage?: number;
   settings: {
     auto_timer: boolean;
   };

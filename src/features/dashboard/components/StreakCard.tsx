@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { calculateStreakStatus, buildResult } from '../utils/streakUtils';
+import { calculateStreakStatus } from '../utils/streakUtils';
 
 interface StreakCardProps {
   currentStreak: number;
@@ -7,19 +6,7 @@ interface StreakCardProps {
 }
 
 export function StreakCard({ currentStreak, lastWorkoutDate }: StreakCardProps) {
-  const [debugMode, setDebugMode] = useState<number | null>(null);
-
-  const rawStreak = calculateStreakStatus(currentStreak, lastWorkoutDate);
-  const streak = debugMode !== null ? buildResult(debugMode, true) : rawStreak;
-
-  const handleDebugClick = () => {
-    const steps = [0, 5, 10, 20, 45, 75, 120, 250, 400, 800];
-    setDebugMode(prev => {
-      if (prev === null) return steps[1];
-      const nextIdx = (steps.indexOf(prev) + 1) % steps.length;
-      return steps[nextIdx];
-    });
-  };
+  const streak = calculateStreakStatus(currentStreak, lastWorkoutDate);
 
   const isLegend = streak.level === 'legend';
   const isElite = ['year', 'twoYears', 'legend'].includes(streak.level);
@@ -27,8 +14,7 @@ export function StreakCard({ currentStreak, lastWorkoutDate }: StreakCardProps) 
 
   return (
     <div
-      onClick={handleDebugClick}
-      className={`relative overflow-hidden rounded-3xl p-5 border transition-all duration-300 cursor-pointer select-none
+      className={`relative overflow-hidden rounded-3xl p-5 border transition-all duration-300 select-none
         ${isLegend
           ? 'border-purple-500/60 bg-linear-to-br from-purple-900/40 via-black to-purple-950/30'
           : isElite

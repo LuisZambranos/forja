@@ -3,7 +3,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { readFileSync } from "fs";
 
 const serviceAccount = JSON.parse(
-  readFileSync(new URL("./serviceAccountKey.json", import.meta.url))
+  readFileSync(new URL("./serviceAccountKey-dev.json", import.meta.url))
 );
 
 initializeApp({ credential: cert(serviceAccount) });
