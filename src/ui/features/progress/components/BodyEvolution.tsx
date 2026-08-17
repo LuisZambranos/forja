@@ -4,6 +4,7 @@ import { useBodyEvolution } from '@ui/hooks/useBodyEvolution';
 import { compressImageToWebP, uploadToImgBB } from '@core/services/storage.service';
 import { Button } from '@ui/components/ui/Button';
 import { Input } from '@ui/components/ui/Input';
+import { CachedImage } from '@ui/components/ui/CachedImage';
 import type { BodyMetric } from '@core/models';
 
 export function BodyEvolution() {
@@ -220,7 +221,7 @@ export function BodyEvolution() {
                       if (!url) return null;
                       return (
                         <div key={type} onClick={() => setFullscreenImage(url)} className="w-16 h-20 rounded-xl overflow-hidden border border-border/50 shrink-0 cursor-zoom-in hover:opacity-80 transition-opacity">
-                          <img src={url} alt={type} className="w-full h-full object-cover" loading="lazy" />
+                          <CachedImage src={url} alt={type} className="w-full h-full" fallbackIconClassName="w-4 h-4 text-text-muted/30" />
                         </div>
                       );
                     })}
@@ -236,10 +237,18 @@ export function BodyEvolution() {
       {/* Visor de Imágenes en Pantalla Completa */}
       {fullscreenImage && (
         <div className="fixed inset-0 z-100 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in" onClick={() => setFullscreenImage(null)}>
-          <button className="absolute top-4 right-4 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors" onClick={() => setFullscreenImage(null)}>
+          <button className="absolute top-4 right-4 p-2 bg-white/10 rounded-full text-white hover:bg-white/20 transition-colors z-50" onClick={() => setFullscreenImage(null)}>
             <X className="w-6 h-6" />
           </button>
-          <img src={fullscreenImage} alt="Fullscreen" className="max-w-full max-h-[90dvh] object-contain rounded-lg shadow-2xl" onClick={(e) => e.stopPropagation()} />
+          <div className="w-full max-w-4xl max-h-[90dvh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <CachedImage 
+              src={fullscreenImage} 
+              alt="Fullscreen" 
+              className="w-full h-full max-h-[90dvh] rounded-lg shadow-2xl" 
+              imgClassName="max-w-full max-h-[90dvh] object-contain rounded-lg"
+              fallbackIconClassName="w-12 h-12 text-white/50"
+            />
+          </div>
         </div>
       )}
 

@@ -8,6 +8,7 @@ import { usePushNotifications } from '@ui/hooks/usePushNotifications';
 import { logoutUser } from '@core/services/user.service';
 import { useUpdateProfile, useUserProfile } from '@ui/hooks/useUser';
 import { compressImageToWebP, uploadToImgBB } from '@core/services/storage.service';
+import { CachedImage } from '@ui/components/ui/CachedImage';
 
 const AVATAR_MALE = (
   <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -133,7 +134,7 @@ export default function Profile() {
           <div className="w-32 h-32 rounded-full bg-linear-to-tr from-primary to-highlight p-1">
             <div className="w-full h-full rounded-full bg-[#E2E8F0] overflow-hidden flex items-center justify-center shadow-inner relative">
               {profile.photo_url ? (
-                <img src={profile.photo_url} alt="Avatar" className="w-full h-full object-cover" />
+                <CachedImage src={profile.photo_url} alt="Avatar" className="w-full h-full" fallbackIconClassName="w-8 h-8 text-text-muted/50" />
               ) : (
                 <div className="flex items-end justify-center w-full h-full pt-4">
                   {sex === 'female' ? AVATAR_FEMALE : AVATAR_MALE}
