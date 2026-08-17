@@ -13,7 +13,7 @@ import { getLastExerciseStats } from '@core/services/workout.service';
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
 // ──────────────────────────────────────────────
-type Phase = 'intro' | 'active' | 'resting';
+type Phase = 'intro' | 'active' | 'resting' | 'completed';
 
 interface LastTimeStats {
   weight: number;
@@ -188,6 +188,12 @@ export default function FocusMode() {
     };
     setCompletedSets(prev => [...prev, newSet]);
 
+    if (isLastSet && isLastExercise) {
+      setPhase('completed');
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 300]);
+      return;
+    }
+
     // Iniciar descanso
     let nextRest = 90;
     if (isLastSet) {
@@ -237,14 +243,17 @@ export default function FocusMode() {
         exercise_ids: exerciseIds
       };
 
-      await saveWorkout({ sessionData, sets: completedSets });
+      // Guardado en segundo plano (fire-and-forget).
+      // Firestore lo guarda localmente de inmediato y sincroniza al recuperar red.
+      saveWorkout({ sessionData, sets: completedSets }).catch(err => {
+        console.error('Error sincronizando entrenamiento en background:', err);
+      });
       
       clearWorkout();
       navigate('/');
     } catch (err) {
-      console.error('Error al guardar entrenamiento:', err);
-      alert('Hubo un error al guardar tu entrenamiento.');
-    } finally {
+      console.error('Error al procesar entrenamiento:', err);
+      alert('Hubo un error interno al guardar tu entrenamiento.');
       setSaving(false);
     }
   };
@@ -436,7 +445,7 @@ export default function FocusMode() {
           >
             <Check className="mr-2 w-6 h-6" />
             {isLastSet && isLastExercise
-              ? 'Confirmar y Finalizar'
+              ? 'Completar Rutina'
               : 'Confirmar — Iniciar Descanso'}
           </Button>
         </div>
@@ -447,69 +456,147 @@ export default function FocusMode() {
   // ─────────────────────────────────────────────────────────
   //  PANTALLA: DESCANSO (modal a pantalla completa)
   // ─────────────────────────────────────────────────────────
-  return (
-    <div className="min-h-dvh flex flex-col items-center justify-between bg-bg px-4 py-10 max-w-lg mx-auto">
-      {/* Top */}
-      <div className="text-center w-full">
-        <p className="text-xs text-text-muted font-bold uppercase tracking-widest mb-2">
-          {currentEx?.name} · Serie {setIndex + 1} ✓
-        </p>
-        <div className="h-px bg-border w-16 mx-auto" />
-      </div>
+  if (phase === 'resting') {
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-between bg-bg px-4 py-10 max-w-lg mx-auto">
+        {/* Top */}
+        <div className="text-center w-full">
+          <p className="text-xs text-text-muted font-bold uppercase tracking-widest mb-2">
+            {currentEx?.name} · Serie {setIndex + 1} ✓
+          </p>
+          <div className="h-px bg-border w-16 mx-auto" />
+        </div>
 
-      {/* Timer central */}
-      <div className="flex flex-col items-center gap-4">
-        {restDisplay > 0 ? (
-          <>
-            <div className="w-40 h-40 rounded-full border-4 border-highlight/30 flex items-center justify-center
-              bg-highlight/5 relative">
-              <Timer className="absolute top-4 left-1/2 -translate-x-1/2 w-5 h-5 text-highlight" />
-              <span className="text-5xl font-black text-highlight font-mono">
-                {formatTime(restDisplay)}
-              </span>
-            </div>
-            <p className="text-text-muted text-sm">Descansando…</p>
-          </>
-        ) : (
-          <>
-            <div className="w-40 h-40 rounded-full border-4 border-success/50 flex items-center justify-center
-              bg-success/10">
-              <span className="text-5xl">🔥</span>
-            </div>
-            <p className="text-xl font-bold text-success">¡Listo para la siguiente!</p>
-          </>
-        )}
-      </div>
+        {/* Timer central */}
+        <div className="flex flex-col items-center gap-4">
+          {restDisplay > 0 ? (
+            <>
+              <div className="w-40 h-40 rounded-full border-4 border-highlight/30 flex items-center justify-center
+                bg-highlight/5 relative">
+                <Timer className="absolute top-4 left-1/2 -translate-x-1/2 w-5 h-5 text-highlight" />
+                <span className="text-5xl font-black text-highlight font-mono">
+                  {formatTime(restDisplay)}
+                </span>
+              </div>
+              <p className="text-text-muted text-sm">Descansando…</p>
+            </>
+          ) : (
+            <>
+              <div className="w-40 h-40 rounded-full border-4 border-success/50 flex items-center justify-center
+                bg-success/10">
+                <span className="text-5xl">🔥</span>
+              </div>
+              <p className="text-xl font-bold text-success">¡Listo para la siguiente!</p>
+            </>
+          )}
+        </div>
 
-      {/* Botones */}
-      <div className="w-full flex flex-col gap-3">
-        <Button
-          variant="highlight"
-          fullWidth
-          size="lg"
-          className="h-16 rounded-2xl font-black text-lg glow-highlight"
-          onClick={handleNextSet}
-          disabled={saving}
-        >
-          <ChevronRight className="mr-1 w-6 h-6" />
-          {isLastSet && isLastExercise
-            ? (saving ? 'Guardando...' : 'Finalizar Entrenamiento')
-            : isLastSet
-              ? `Ejercicio ${exIndex + 2}: ${allExercises.find(e => e.id === routine.exercises[exIndex + 1]?.exercise_id)?.name || '...'}`
-              : `Serie ${setIndex + 2} de ${targetSets}`}
-        </Button>
-
-        {restDisplay > 0 && (
-          <button
-            onClick={() => { setRestEndsAt(null); setRestDisplay(0); }}
-            className="text-center text-sm text-text-muted underline underline-offset-2"
+        {/* Botones */}
+        <div className="w-full flex flex-col gap-3">
+          <Button
+            variant="highlight"
+            fullWidth
+            size="lg"
+            className="h-16 rounded-2xl font-black text-lg glow-highlight"
+            onClick={handleNextSet}
           >
-            Saltar descanso
-          </button>
-        )}
+            <ChevronRight className="mr-1 w-6 h-6" />
+            {isLastSet
+                ? `Ejercicio ${exIndex + 2}: ${allExercises.find(e => e.id === routine.exercises[exIndex + 1]?.exercise_id)?.name || '...'}`
+                : `Serie ${setIndex + 2} de ${targetSets}`}
+          </Button>
+
+          {restDisplay > 0 && (
+            <button
+              onClick={() => { setRestEndsAt(null); setRestDisplay(0); }}
+              className="text-center text-sm text-text-muted underline underline-offset-2"
+            >
+              Saltar descanso
+            </button>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: COMPLETADO (FELICITACIONES)
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'completed') {
+    const durationMin = Math.max(1, Math.floor((Date.now() - startedAt) / 60000));
+    const totalVolume = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
+    const totalSetsCompleted = completedSets.length;
+    const exercisesCount = new Set(completedSets.map(s => s.exercise_id)).size;
+
+    return (
+      <div className="min-h-dvh flex flex-col items-center bg-bg px-6 py-8 max-w-lg mx-auto relative overflow-hidden">
+        {/* Decoraciones de fondo (Gradients suaves) */}
+        <div className="absolute top-[-10%] left-[-10%] w-64 h-64 bg-highlight/20 blur-[100px] rounded-full pointer-events-none" />
+        <div className="absolute top-[40%] right-[-10%] w-64 h-64 bg-primary/10 blur-[100px] rounded-full pointer-events-none" />
+
+        {/* Contenedor central (flex-1 para empujar al medio y evitar que se pegue al borde) */}
+        <div className="flex-1 flex flex-col items-center justify-center w-full mt-10">
+          
+          <div className="relative mb-8">
+            {/* Brillo detrás del trofeo */}
+            <div className="absolute inset-0 bg-highlight/30 blur-2xl rounded-full animate-pulse" />
+            
+            {/* Círculo del trofeo */}
+            <div className="w-36 h-36 rounded-full border-4 border-highlight/30 bg-gradient-to-br from-highlight/20 to-highlight/5 flex items-center justify-center animate-[bounce_3s_infinite] shadow-[0_0_30px_rgba(255,144,0,0.2)] backdrop-blur-md relative z-10">
+              <span className="text-7xl drop-shadow-2xl">🏆</span>
+            </div>
+          </div>
+          
+          <h1 className="text-4xl font-black text-text mb-3 tracking-tight text-center">¡Misión Cumplida!</h1>
+          
+          <p className="text-text-muted text-sm mb-8 text-center leading-relaxed max-w-[280px]">
+            Has superado tu rutina de hoy. Estos son los increíbles resultados de tu esfuerzo:
+          </p>
+
+          {/* Grid de Estadísticas */}
+          <div className="w-full grid grid-cols-2 gap-3 mb-3 relative z-10">
+            <div className="bg-surface/50 backdrop-blur-md border border-border/50 p-4 rounded-3xl flex flex-col items-center justify-center relative overflow-hidden shadow-sm">
+              <div className="absolute top-0 right-0 w-20 h-20 bg-highlight/10 blur-2xl rounded-full" />
+              <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest mb-1 z-10">Volumen Total</span>
+              <span className="text-3xl font-black text-text z-10">{totalVolume}<span className="text-sm font-normal text-text-muted ml-1">kg</span></span>
+            </div>
+            
+            <div className="bg-surface/50 backdrop-blur-md border border-border/50 p-4 rounded-3xl flex flex-col items-center justify-center relative overflow-hidden shadow-sm">
+              <div className="absolute bottom-0 left-0 w-20 h-20 bg-primary/10 blur-2xl rounded-full" />
+              <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest mb-1 z-10">Tiempo</span>
+              <span className="text-3xl font-black text-text z-10">{durationMin}<span className="text-sm font-normal text-text-muted ml-1">min</span></span>
+            </div>
+          </div>
+          
+          <div className="w-full grid grid-cols-2 gap-3 relative z-10">
+            <div className="bg-surface/50 backdrop-blur-md border border-border/50 p-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
+              <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest mb-1">Series Totales</span>
+              <span className="text-2xl font-black text-text">{totalSetsCompleted}</span>
+            </div>
+            
+            <div className="bg-surface/50 backdrop-blur-md border border-border/50 p-3 rounded-2xl flex flex-col items-center justify-center shadow-sm">
+              <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest mb-1">Ejercicios</span>
+              <span className="text-2xl font-black text-text">{exercisesCount}</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Contenedor del Botón */}
+        <div className="w-full pt-8 pb-4 relative z-20">
+          <Button
+            variant="highlight"
+            fullWidth
+            size="lg"
+            className="h-16 rounded-2xl font-black text-xl glow-highlight transition-all hover:scale-[1.02] active:scale-[0.98]"
+            onClick={handleFinish}
+            disabled={saving}
+          >
+            {saving ? 'Guardando Entrenamiento...' : 'Finalizar y Guardar'}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 }
 
 
