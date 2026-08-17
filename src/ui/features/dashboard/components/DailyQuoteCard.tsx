@@ -33,7 +33,7 @@ export function DailyQuoteCard() {
         </p>
 
         {/* Autor */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
           <div className="h-px w-8 bg-border" />
           <p className="text-xs font-bold text-primary uppercase tracking-widest whitespace-nowrap">
             {phrase.author}

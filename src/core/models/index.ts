@@ -9,6 +9,7 @@ export interface User {
   current_streak?: number;
   last_workout_date?: string;
   lifetime_tonnage?: number;
+  photo_url?: string;
   settings: {
     auto_timer: boolean;
   };

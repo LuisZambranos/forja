@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@ui/hooks/useAuth';
 import { Button } from '@ui/components/ui/Button';
 import { Input } from '@ui/components/ui/Input';
-import { LogOut, Save, Bell } from 'lucide-react';
+import { LogOut, Save, Bell, Camera } from 'lucide-react';
 import type { User } from '@core/models';
 import { usePushNotifications } from '@ui/hooks/usePushNotifications';
 import { logoutUser } from '@core/services/user.service';
 import { useUpdateProfile, useUserProfile } from '@ui/hooks/useUser';
+import { compressImageToWebP, uploadToImgBB } from '@core/services/storage.service';
 
 const AVATAR_MALE = (
   <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -51,6 +52,8 @@ export default function Profile() {
   const [profile, setProfile] = useState<Partial<User>>({});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { permission, requestPermission } = usePushNotifications();
 
   useEffect(() => {
@@ -71,6 +74,30 @@ export default function Profile() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploadingImage(true);
+      const webpBlob = await compressImageToWebP(file);
+      const url = await uploadToImgBB(webpBlob);
+      setProfile(p => ({ ...p, photo_url: url }));
+      // Guarda automáticamente
+      if (user?.uid) {
+        await updateProfile({
+          uid: user.uid,
+          data: { photo_url: url }
+        });
+      }
+    } catch (error) {
+      console.error('Error al subir la foto:', error);
+      alert('Hubo un error al subir la foto de perfil.');
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   if (isProfileLoading) {
@@ -101,13 +128,34 @@ export default function Profile() {
 
       {/* Avatar */}
       <div className="flex flex-col items-center mb-10">
-        <div className="relative">
+        <div className="relative group">
           {/* Contenedor del degradado circular */}
           <div className="w-32 h-32 rounded-full bg-linear-to-tr from-primary to-highlight p-1">
-            <div className="w-full h-full rounded-full bg-[#E2E8F0] overflow-hidden flex items-end justify-center shadow-inner pt-4">
-              {sex === 'female' ? AVATAR_FEMALE : AVATAR_MALE}
+            <div className="w-full h-full rounded-full bg-[#E2E8F0] overflow-hidden flex items-center justify-center shadow-inner relative">
+              {profile.photo_url ? (
+                <img src={profile.photo_url} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <div className="flex items-end justify-center w-full h-full pt-4">
+                  {sex === 'female' ? AVATAR_FEMALE : AVATAR_MALE}
+                </div>
+              )}
             </div>
           </div>
+          {/* Botón de la cámara */}
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingImage}
+            className="absolute bottom-0 right-0 p-2.5 bg-surface border border-border rounded-full shadow-lg text-primary hover:bg-surface-alt transition-colors active:scale-95 disabled:opacity-50 z-10"
+          >
+            {uploadingImage ? <span className="animate-spin block w-5 h-5 border-2 border-primary border-t-transparent rounded-full" /> : <Camera className="w-5 h-5" />}
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            hidden 
+            accept="image/*" 
+            onChange={handleImageChange}
+          />
         </div>
         
         {/* Selector de sexo */}

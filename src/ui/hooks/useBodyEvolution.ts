@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getBodyMetricsByUser, createBodyMetric, deleteBodyMetric } from '@core/services/progress.service';
+import { getBodyMetricsByUser, createBodyMetric, deleteBodyMetric, updateBodyMetric } from '@core/services/progress.service';
 import type { BodyMetric } from '@core/models';
 import { useAuth } from './useAuth';
 
@@ -38,11 +38,23 @@ export function useBodyEvolution() {
     }
   });
 
+  const updateMetricMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string, data: Partial<BodyMetric> }) => {
+      if (!user?.uid) throw new Error('No auth');
+      await updateBodyMetric(id, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['body_metrics', user?.uid] });
+    }
+  });
+
   return {
     metrics: metricsQuery.data || [],
     isLoading: metricsQuery.isLoading,
     addMetric: addMetricMutation.mutateAsync,
     isAdding: addMetricMutation.isPending,
+    updateMetric: updateMetricMutation.mutateAsync,
+    isUpdating: updateMetricMutation.isPending,
     deleteMetric: deleteMetricMutation.mutateAsync,
   };
 }
