@@ -4,16 +4,18 @@ import { useAuth } from '@ui/hooks/useAuth';
 import { useWorkoutStore } from '../../../store/workoutStore';
 import type { Routine, WorkoutSet } from '@core/models';
 import { Button } from '@ui/components/ui/Button';
+import { Modal } from '@ui/components/ui/Modal';
 import { Play, Timer, ChevronRight, Check, X } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine } from '@ui/hooks/useRoutines';
 import { useSaveWorkoutSession } from '@ui/hooks/useWorkout';
 import { getLastExerciseStats } from '@core/services/workout.service';
+import { StreakCelebration } from './components/StreakCelebration';
 
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
 // ──────────────────────────────────────────────
-type Phase = 'intro' | 'active' | 'resting' | 'completed';
+type Phase = 'intro' | 'active' | 'resting' | 'completed' | 'streak_celebration';
 
 interface LastTimeStats {
   weight: number;
@@ -56,6 +58,38 @@ export default function FocusMode() {
   const [startedAt] = useState(Date.now());
   const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null);
 
+  // Estados para Modal de Confirmación de Salida
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [exitConfirmUnlocked, setExitConfirmUnlocked] = useState(false);
+
+  // Prevenir volver atrás por error (swipe back o botón atrás)
+  useEffect(() => {
+    window.history.pushState({ focusMode: true }, '');
+
+    const handlePopState = () => {
+      window.history.pushState({ focusMode: true }, '');
+      setShowExitConfirm(true);
+      setExitConfirmUnlocked(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleExitRequest = () => {
+    setShowExitConfirm(true);
+    setExitConfirmUnlocked(false);
+  };
+
+  const confirmExit = () => {
+    clearWorkout();
+    navigate('/', { replace: true });
+  };
+
+  // Gamificación: Progreso
+  const [progressCount, setProgressCount] = useState(0);
+  const [progressExercises] = useState(new Set<string>());
+
   // Cargar rutina
   const { data: routineData, isLoading: isLoadingRoutine } = useRoutine(routineId);
   useEffect(() => {
@@ -65,7 +99,7 @@ export default function FocusMode() {
       alert('Rutina no encontrada');
       navigate('/');
     }
-  }, [routineData, isLoadingRoutine, navigate]);
+  }, [routineData, isLoadingRoutine, navigate, routine]);
 
   // Caché de ejercicios
   const { data: myExercises = [] } = useMyExercises(user?.uid);
@@ -141,7 +175,7 @@ export default function FocusMode() {
             osc.connect(audioCtx.destination);
             osc.start();
             osc.stop(audioCtx.currentTime + 0.2);
-          } catch (e) {
+          } catch {
             console.warn('AudioContext failed to play beep');
           }
         }
@@ -176,6 +210,91 @@ export default function FocusMode() {
   const isLastExercise = exIndex === routine.exercises.length - 1;
   const isLastSet = setIndex >= targetSets - 1;
 
+  // ── Helpers Globales ──
+  const totalRoutineSets = routine.exercises.reduce((acc, ex) => acc + (ex.target_sets ?? 3), 0) || 1;
+  const progressPercent = Math.min(100, Math.round((completedSets.length / totalRoutineSets) * 100));
+
+  const GlobalHeader = ({ title, subtitle }: { title: string, subtitle: string }) => (
+    <div className="mb-8 pt-[max(0.5rem,env(safe-area-inset-top))]">
+      <div className="flex justify-between items-end mb-2">
+        <div>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-text-muted block mb-0.5">{title}</span>
+          <span className="text-sm font-black text-text">{subtitle}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-black text-highlight">{progressPercent}%</span>
+          <button onClick={handleExitRequest} className="text-text-muted p-1 hover:text-text active:scale-95 transition-all bg-surface rounded-full">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+      <div className="h-1.5 w-full bg-surface-alt rounded-full overflow-hidden">
+        <div 
+          className="h-full bg-linear-to-r from-primary to-highlight transition-all duration-700 ease-out"
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
+      <ExitConfirmModal />
+    </div>
+  );
+
+  const ExitConfirmModal = () => {
+    return (
+      <Modal
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        title="¿Seguro que quieres salir?"
+        footer={
+          <>
+            <Button 
+              variant="secondary" 
+              className="flex-1"
+              onClick={() => setShowExitConfirm(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="danger" 
+              className="flex-1"
+              disabled={!exitConfirmUnlocked}
+              onClick={confirmExit}
+            >
+              Salir
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col items-center text-center">
+          <p className="text-sm text-text-muted mb-6">
+            El progreso de este entrenamiento no se guardará y se perderá por completo.
+          </p>
+
+          <label className="flex items-center gap-3 bg-bg p-4 rounded-2xl w-full cursor-pointer border border-border group">
+            <div className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only" 
+                checked={exitConfirmUnlocked}
+                onChange={(e) => setExitConfirmUnlocked(e.target.checked)}
+              />
+              <div className={`w-11 h-6 rounded-full transition-all flex items-center p-0.5 ${exitConfirmUnlocked ? 'bg-danger' : 'bg-surface-alt'}`}>
+                <div className={`w-5 h-5 rounded-full border transition-all shadow-sm ${exitConfirmUnlocked ? 'translate-x-full bg-white border-white' : 'translate-x-0 bg-text border-border'}`} />
+              </div>
+            </div>
+            <span className="text-xs font-bold text-text flex-1 text-left">Confirmo que deseo perder mi progreso</span>
+          </label>
+        </div>
+      </Modal>
+    );
+  };
+
+  const handleNumericInput = (val: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
+    let safeVal = val.replace(',', '.');
+    if (/^\d*\.?\d*$/.test(safeVal)) {
+      setter(safeVal);
+    }
+  };
+
   // ── Confirmar serie ──
   const handleConfirmSet = () => {
     const w = parseFloat(weight) || 0;
@@ -187,6 +306,18 @@ export default function FocusMode() {
       weight: w, reps: r, set_type: 'normal'
     };
     setCompletedSets(prev => [...prev, newSet]);
+
+    // Calcular avance (Carga Progresiva)
+    if (lastTime && !progressExercises.has(currentRoutineEx.exercise_id)) {
+      const isBetterWeight = w > lastTime.weight;
+      const isBetterReps = w === lastTime.weight && r > lastTime.reps;
+      const isBetterSets = w === lastTime.weight && r === lastTime.reps && (setIndex + 1) > lastTime.totalSets;
+      
+      if (isBetterWeight || isBetterReps || isBetterSets) {
+        setProgressCount(prev => prev + 1);
+        progressExercises.add(currentRoutineEx.exercise_id);
+      }
+    }
 
     if (isLastSet && isLastExercise) {
       setPhase('completed');
@@ -250,7 +381,7 @@ export default function FocusMode() {
       });
       
       clearWorkout();
-      navigate('/');
+      setPhase('streak_celebration');
     } catch (err) {
       console.error('Error al procesar entrenamiento:', err);
       alert('Hubo un error interno al guardar tu entrenamiento.');
@@ -264,24 +395,10 @@ export default function FocusMode() {
   if (phase === 'intro') {
     return (
       <div className="min-h-dvh flex flex-col bg-bg px-4 py-8 max-w-lg mx-auto">
-        {/* Progreso */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-text-muted font-bold uppercase tracking-widest">
-              Ejercicio {exIndex + 1} de {routine.exercises.length}
-            </span>
-            <button onClick={() => navigate('/')} className="text-text-muted p-1">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          {/* Barra de progreso */}
-          <div className="h-1 bg-surface-alt rounded-full">
-            <div
-              className="h-1 bg-primary rounded-full transition-all duration-500"
-              style={{ width: `${((exIndex) / routine.exercises.length) * 100}%` }}
-            />
-          </div>
-        </div>
+        <GlobalHeader 
+          title="Progreso" 
+          subtitle={`Ejercicio ${exIndex + 1} de ${routine.exercises.length}`} 
+        />
 
         {/* Nombre del ejercicio */}
         <div className="flex-1 flex flex-col justify-center">
@@ -363,23 +480,10 @@ export default function FocusMode() {
   if (phase === 'active') {
     return (
       <div className="min-h-dvh flex flex-col bg-bg px-4 py-8 max-w-lg mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-xs text-text-muted font-bold uppercase tracking-widest">
-              {currentEx?.name}
-            </span>
-            <span className="text-xs text-primary font-bold bg-primary/15 px-3 py-1 rounded-full">
-              Serie {setIndex + 1} / {targetSets}
-            </span>
-          </div>
-          <div className="h-1 bg-surface-alt rounded-full">
-            <div
-              className="h-1 bg-primary rounded-full transition-all"
-              style={{ width: `${((setIndex) / targetSets) * 100}%` }}
-            />
-          </div>
-        </div>
+        <GlobalHeader 
+          title={currentEx?.name || 'Ejercicio'} 
+          subtitle={`Serie ${setIndex + 1} de ${targetSets}`} 
+        />
 
         {/* Inputs grandes */}
         <div className="flex-1 flex flex-col justify-center gap-6">
@@ -398,13 +502,13 @@ export default function FocusMode() {
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => adjustValue(setWeight, -2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 value={weight}
-                onChange={e => setWeight(e.target.value)}
+                onChange={e => handleNumericInput(e.target.value, setWeight)}
                 placeholder={lastTime ? String(lastTime.weight) : '0'}
                 className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
-                  border-2 border-border focus:outline-none
+                  border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
                   placeholder:text-border transition-colors"
               />
               <button type="button" onClick={() => adjustValue(setWeight, 2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
@@ -419,13 +523,13 @@ export default function FocusMode() {
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => adjustValue(setReps, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
               <input
-                type="number"
+                type="text"
                 inputMode="numeric"
                 value={reps}
-                onChange={e => setReps(e.target.value)}
+                onChange={e => handleNumericInput(e.target.value, setReps)}
                 placeholder={lastTime ? String(lastTime.reps) : String(targetSets)}
                 className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
-                  border-2 border-border focus:outline-none
+                  border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
                   placeholder:text-border transition-colors"
               />
               <button type="button" onClick={() => adjustValue(setReps, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
@@ -458,13 +562,12 @@ export default function FocusMode() {
   // ─────────────────────────────────────────────────────────
   if (phase === 'resting') {
     return (
-      <div className="min-h-dvh flex flex-col items-center justify-between bg-bg px-4 py-10 max-w-lg mx-auto">
-        {/* Top */}
-        <div className="text-center w-full">
-          <p className="text-xs text-text-muted font-bold uppercase tracking-widest mb-2">
-            {currentEx?.name} · Serie {setIndex + 1} ✓
-          </p>
-          <div className="h-px bg-border w-16 mx-auto" />
+      <div className="min-h-dvh flex flex-col items-center justify-between bg-bg px-4 py-8 max-w-lg mx-auto">
+        <div className="w-full">
+          <GlobalHeader 
+            title="Descanso" 
+            subtitle={`${currentEx?.name} · Serie ${setIndex + 1} ✓`} 
+          />
         </div>
 
         {/* Timer central */}
@@ -524,7 +627,6 @@ export default function FocusMode() {
   // ─────────────────────────────────────────────────────────
   if (phase === 'completed') {
     const durationMin = Math.max(1, Math.floor((Date.now() - startedAt) / 60000));
-    const totalVolume = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
     const totalSetsCompleted = completedSets.length;
     const exercisesCount = new Set(completedSets.map(s => s.exercise_id)).size;
 
@@ -557,8 +659,8 @@ export default function FocusMode() {
           <div className="w-full grid grid-cols-2 gap-3 mb-3 relative z-10">
             <div className="bg-surface/50 backdrop-blur-md border border-border/50 p-4 rounded-3xl flex flex-col items-center justify-center relative overflow-hidden shadow-sm">
               <div className="absolute top-0 right-0 w-20 h-20 bg-highlight/10 blur-2xl rounded-full" />
-              <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest mb-1 z-10">Volumen Total</span>
-              <span className="text-3xl font-black text-text z-10">{totalVolume}<span className="text-sm font-normal text-text-muted ml-1">kg</span></span>
+              <span className="text-text-muted text-[10px] uppercase font-bold tracking-widest mb-1 z-10 text-center">Avances Logrados</span>
+              <span className="text-3xl font-black text-text z-10">{progressCount}<span className="text-sm font-normal text-text-muted ml-2">📈</span></span>
             </div>
             
             <div className="bg-surface/50 backdrop-blur-md border border-border/50 p-4 rounded-3xl flex flex-col items-center justify-center relative overflow-hidden shadow-sm">
@@ -595,6 +697,43 @@ export default function FocusMode() {
           </Button>
         </div>
       </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: CELEBRACIÓN DE RACHA (DUOLINGO STYLE)
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'streak_celebration') {
+    const currentStreak = user?.current_streak || 0;
+    const lastWorkoutDateStr = user?.last_workout_date || '';
+    
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    let isSameDay = lastWorkoutDateStr === todayStr;
+    let newStreak = currentStreak;
+    let isRestored = false;
+    
+    if (!isSameDay) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      
+      if (lastWorkoutDateStr === yesterdayStr) {
+        newStreak = currentStreak + 1;
+      } else {
+        newStreak = 1;
+        isRestored = true;
+      }
+    }
+
+    return (
+      <StreakCelebration 
+        isSameDay={isSameDay}
+        isRestored={isRestored}
+        newStreak={newStreak}
+        onClose={() => navigate('/')}
+      />
     );
   }
 }

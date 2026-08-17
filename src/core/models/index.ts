@@ -7,6 +7,7 @@ export interface User {
   initial_weight_kg?: number;
   sex?: 'male' | 'female';
   current_streak?: number;
+  max_streak?: number;
   last_workout_date?: string;
   lifetime_tonnage?: number;
   photo_url?: string;
@@ -57,6 +58,7 @@ export interface WorkoutSession {
   finished_at: number;
   duration_seconds: number;
   sets: WorkoutSet[];
+  exercise_ids: string[];
 }
 
 export interface BodyMetric {

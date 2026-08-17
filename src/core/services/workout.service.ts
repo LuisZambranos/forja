@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, getDoc, writeBatch, increment, limit, QueryConstraint } from 'firebase/firestore';
+import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, getDoc, writeBatch, increment, limit, startAfter, QueryConstraint } from 'firebase/firestore';
 
 export interface LastTimeStats {
   weight: number;
@@ -46,6 +46,29 @@ export async function getWorkoutSessionsByUser(uid: string, timeRangeMs?: number
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutSession));
 }
 
+export async function getWorkoutHistoryPaginated(uid: string, pageParam: any | null, limitCount: number = 10) {
+  const constraints: QueryConstraint[] = [
+    where('owner_id', '==', uid),
+    orderBy('finished_at', 'desc'),
+    limit(limitCount)
+  ];
+  
+  if (pageParam) {
+    constraints.push(startAfter(pageParam));
+  }
+  
+  const q = query(collection(db, 'workout_sessions'), ...constraints);
+  const snap = await getDocs(q);
+  
+  const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutSession));
+  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+  
+  return {
+    data,
+    lastDoc
+  };
+}
+
 export async function getWorkoutSessionById(id: string): Promise<WorkoutSession | null> {
   const snap = await getDoc(doc(db, 'workout_sessions', id));
   if (snap.exists()) {
@@ -73,6 +96,7 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
   if (userSnap.exists()) {
     const userData = userSnap.data();
     const currentStreak = userData.current_streak || 0;
+    const maxStreak = userData.max_streak || 0;
     const lastWorkoutDateStr = userData.last_workout_date || '';
     
     const today = new Date();
@@ -80,6 +104,7 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
     
     let newStreak = currentStreak;
     let newDate = todayStr;
+    let newMaxStreak = maxStreak;
 
     if (lastWorkoutDateStr !== todayStr) {
       const yesterday = new Date();
@@ -92,10 +117,15 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
         newStreak = 1;
       }
     }
+    
+    if (newStreak > newMaxStreak) {
+      newMaxStreak = newStreak;
+    }
     const sessionTonnage = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
     
     batch.set(userRef, {
       current_streak: newStreak,
+      max_streak: newMaxStreak,
       last_workout_date: newDate,
       lifetime_tonnage: increment(sessionTonnage)
     }, { merge: true });

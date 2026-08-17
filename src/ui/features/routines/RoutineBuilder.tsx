@@ -3,6 +3,7 @@ import { useNavigate, Link, useParams } from 'react-router-dom';
 import { useAuth } from '@ui/hooks/useAuth';
 import { Button } from '@ui/components/ui/Button';
 import { Modal } from '@ui/components/ui/Modal';
+import { SearchableSelect } from '@ui/components/ui/SearchableSelect';
 import { ExerciseModal } from '../exercises/components/ExerciseModal';
 import { ChevronLeft, Plus, X, Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
@@ -30,6 +31,8 @@ export default function RoutineBuilder() {
   
   // Estados para nuevo ejercicio inline
   const [isCreateExerciseModalOpen, setIsCreateExerciseModalOpen] = useState(false);
+  const [isRestSetsSelectorOpen, setIsRestSetsSelectorOpen] = useState(false);
+  const [isRestExercisesSelectorOpen, setIsRestExercisesSelectorOpen] = useState(false);
 
   const { data: routineData, isLoading: loadingRoutine } = useRoutine(isEditing ? id : undefined);
   const { mutateAsync: createRoutine, isPending: isCreating } = useCreateRoutine();
@@ -174,6 +177,27 @@ export default function RoutineBuilder() {
     { label: 'D', value: 0 },
   ];
 
+  const restSetsOptions = [
+    { id: '60', name: '1:00 min' },
+    { id: '90', name: '1:30 min' },
+    { id: '120', name: '2:00 min' },
+    { id: '150', name: '2:30 min' },
+    { id: '180', name: '3:00 min' },
+    { id: '240', name: '4:00 min' },
+    { id: '300', name: '5:00 min' }
+  ];
+
+  const restExercisesOptions = [
+    { id: '90', name: '1:30 min' },
+    { id: '120', name: '2:00 min' },
+    { id: '150', name: '2:30 min' },
+    { id: '180', name: '3:00 min' },
+    { id: '240', name: '4:00 min' },
+    { id: '300', name: '5:00 min' },
+    { id: '420', name: '7:00 min' },
+    { id: '600', name: '10:00 min' }
+  ];
+
   if (loadingInitial || loadingRoutine) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-bg">
@@ -185,8 +209,8 @@ export default function RoutineBuilder() {
   const isSaving = isCreating || isUpdating;
 
   return (
-    <div className="min-h-dvh flex flex-col bg-bg max-w-lg mx-auto pb-32 relative">
-      <header className="px-4 pt-8 pb-4 flex items-center justify-between sticky top-0 bg-bg/95 backdrop-blur-md z-20">
+    <div className="min-h-dvh flex flex-col bg-bg max-w-lg mx-auto pb-32 animate-in slide-in-from-right duration-300">
+      <header className="px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between sticky top-0 bg-bg/95 backdrop-blur-md z-20">
         <div className="flex items-center gap-3">
           <Link to="/routines" className="w-10 h-10 rounded-xl bg-surface border border-border flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-alt transition-colors active:scale-95">
             <ChevronLeft className="w-6 h-6" />
@@ -240,29 +264,25 @@ export default function RoutineBuilder() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block mb-1">Entre series</label>
-                <select 
-                  value={restBetweenSets}
-                  onChange={e => setRestBetweenSets(Number(e.target.value))}
-                  className="w-full h-12 bg-bg text-text text-sm font-bold rounded-xl px-3 border border-border outline-none transition-colors appearance-none"
+                <button
+                  type="button"
+                  onClick={() => setIsRestSetsSelectorOpen(true)}
+                  className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors flex items-center justify-between focus:ring-1 focus:ring-primary shadow-sm"
                 >
-                  <option value={60}>1:00 min</option>
-                  <option value={90}>1:30 min</option>
-                  <option value={120}>2:00 min</option>
-                  <option value={180}>3:00 min</option>
-                </select>
+                  <span className="text-sm font-bold">{restSetsOptions.find(o => o.id === String(restBetweenSets))?.name || '1:30 min'}</span>
+                  <ChevronDown className="w-4 h-4 text-text-muted" />
+                </button>
               </div>
               <div>
                 <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block mb-1">Entre ejercicios</label>
-                <select 
-                  value={restBetweenExercises}
-                  onChange={e => setRestBetweenExercises(Number(e.target.value))}
-                  className="w-full h-12 bg-bg text-text text-sm font-bold rounded-xl px-3 border border-border outline-none transition-colors appearance-none"
+                <button
+                  type="button"
+                  onClick={() => setIsRestExercisesSelectorOpen(true)}
+                  className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors flex items-center justify-between focus:ring-1 focus:ring-primary shadow-sm"
                 >
-                  <option value={90}>1:30 min</option>
-                  <option value={120}>2:00 min</option>
-                  <option value={180}>3:00 min</option>
-                  <option value={240}>4:00 min</option>
-                </select>
+                  <span className="text-sm font-bold">{restExercisesOptions.find(o => o.id === String(restBetweenExercises))?.name || '3:00 min'}</span>
+                  <ChevronDown className="w-4 h-4 text-text-muted" />
+                </button>
               </div>
             </div>
           </div>
@@ -484,6 +504,32 @@ export default function RoutineBuilder() {
           addExercise(exerciseId);
           setIsCreateExerciseModalOpen(false);
         }}
+      />
+
+      <SearchableSelect
+        isOpen={isRestSetsSelectorOpen}
+        onClose={() => setIsRestSetsSelectorOpen(false)}
+        title="Descanso entre series"
+        items={restSetsOptions}
+        selectedId={String(restBetweenSets)}
+        onSelect={(id) => {
+          setRestBetweenSets(Number(id));
+          setIsRestSetsSelectorOpen(false);
+        }}
+        showSearch={false}
+      />
+
+      <SearchableSelect
+        isOpen={isRestExercisesSelectorOpen}
+        onClose={() => setIsRestExercisesSelectorOpen(false)}
+        title="Descanso entre ejercicios"
+        items={restExercisesOptions}
+        selectedId={String(restBetweenExercises)}
+        onSelect={(id) => {
+          setRestBetweenExercises(Number(id));
+          setIsRestExercisesSelectorOpen(false);
+        }}
+        showSearch={false}
       />
     </div>
   );

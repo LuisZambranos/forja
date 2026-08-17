@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { calculateStreakStatus } from '@ui/features/dashboard/utils/streakUtils';
 
 interface StreakCardProps {
@@ -6,6 +7,7 @@ interface StreakCardProps {
 }
 
 export function StreakCard({ currentStreak, lastWorkoutDate }: StreakCardProps) {
+  const navigate = useNavigate();
   const streak = calculateStreakStatus(currentStreak, lastWorkoutDate);
 
   const isLegend = streak.level === 'legend';
@@ -14,7 +16,8 @@ export function StreakCard({ currentStreak, lastWorkoutDate }: StreakCardProps) 
 
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl p-5 border transition-all duration-300 select-none
+      onClick={() => navigate('/progress', { state: { tab: 'achievements' } })}
+      className={`relative overflow-hidden rounded-3xl p-5 border transition-all duration-300 select-none cursor-pointer active:scale-[0.98] text-left
         ${isLegend
           ? 'border-purple-500/60 bg-linear-to-br from-purple-900/40 via-black to-purple-950/30'
           : isElite

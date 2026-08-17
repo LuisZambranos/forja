@@ -4,6 +4,8 @@ import { Modal } from '@ui/components/ui/Modal';
 import { Button } from '@ui/components/ui/Button';
 import type { Exercise } from '@core/models';
 import { useMyExercises, useCreateExercise, useUpdateExercise } from '@ui/hooks/useExercises';
+import { SearchableSelect } from '@ui/components/ui/SearchableSelect';
+import { ChevronDown } from 'lucide-react';
 
 interface ExerciseModalProps {
   isOpen: boolean;
@@ -22,6 +24,8 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
   
   const [isNewCategory, setIsNewCategory] = useState(false);
   const [isNewEquipment, setIsNewEquipment] = useState(false);
+  const [isCategorySelectorOpen, setIsCategorySelectorOpen] = useState(false);
+  const [isEquipmentSelectorOpen, setIsEquipmentSelectorOpen] = useState(false);
   
   const { data: exercises = [] } = useMyExercises(user?.uid);
   const { mutateAsync: createExercise, isPending: isCreating } = useCreateExercise();
@@ -150,17 +154,16 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
               autoFocus
             />
           ) : (
-            <select
-              required
-              value={muscleGroup}
-              onChange={e => setMuscleGroup(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none appearance-none transition-colors"
+            <button
+              type="button"
+              onClick={() => setIsCategorySelectorOpen(true)}
+              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors flex items-center justify-between focus:ring-1 focus:ring-primary shadow-sm"
             >
-              <option value="" disabled>Selecciona una categoría...</option>
-              {sortedGroups.map(group => (
-                <option key={group as string} value={group as string}>{group as string}</option>
-              ))}
-            </select>
+              <span className={muscleGroup ? 'text-text' : 'text-text-muted'}>
+                {muscleGroup || 'Selecciona una categoría...'}
+              </span>
+              <ChevronDown className="w-4 h-4 text-text-muted" />
+            </button>
           )}
         </div>
 
@@ -190,16 +193,16 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
               autoFocus
             />
           ) : (
-            <select
-              value={equipment}
-              onChange={e => setEquipment(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none appearance-none transition-colors"
+            <button
+              type="button"
+              onClick={() => setIsEquipmentSelectorOpen(true)}
+              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors flex items-center justify-between focus:ring-1 focus:ring-primary shadow-sm"
             >
-              <option value="">Ninguno / Peso corporal</option>
-              {sortedEquipments.map(eq => (
-                <option key={eq as string} value={eq as string}>{eq as string}</option>
-              ))}
-            </select>
+              <span className={equipment ? 'text-text' : 'text-text-muted'}>
+                {equipment || 'Ninguno / Peso corporal'}
+              </span>
+              <ChevronDown className="w-4 h-4 text-text-muted" />
+            </button>
           )}
         </div>
 
@@ -213,6 +216,26 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
           {saving ? 'Guardando...' : (mode === 'create' ? 'Crear Ejercicio' : 'Guardar Cambios')}
         </Button>
       </form>
+
+      <SearchableSelect
+        isOpen={isCategorySelectorOpen}
+        onClose={() => setIsCategorySelectorOpen(false)}
+        title="Seleccionar Categoría"
+        items={sortedGroups.map(g => ({ id: g as string, name: g as string }))}
+        selectedId={muscleGroup}
+        onSelect={setMuscleGroup}
+        searchPlaceholder="Buscar categoría..."
+      />
+
+      <SearchableSelect
+        isOpen={isEquipmentSelectorOpen}
+        onClose={() => setIsEquipmentSelectorOpen(false)}
+        title="Seleccionar Equipamiento"
+        items={sortedEquipments.map(eq => ({ id: eq as string, name: eq as string }))}
+        selectedId={equipment}
+        onSelect={setEquipment}
+        searchPlaceholder="Buscar equipamiento..."
+      />
     </Modal>
   );
 }
