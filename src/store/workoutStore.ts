@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { WorkoutSet, Routine } from '../shared/types';
+import type { WorkoutSet, Routine } from '@core/models';
 
 interface WorkoutState {
   activeSession: boolean;
@@ -29,7 +29,7 @@ export const useWorkoutStore = create<WorkoutState>((set) => ({
   startWorkout: (routine) => {
     // Pre-populate sets based on target_sets
     const initialSets: WorkoutSet[] = [];
-    routine.exercises.forEach(ex => {
+    routine.exercises.forEach((ex: any) => {
       for (let i = 0; i < ex.target_sets; i++) {
         initialSets.push({
           exercise_id: ex.exercise_id,

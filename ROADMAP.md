@@ -29,11 +29,11 @@ Objetivo: ir al gimnasio y usarla.
 
 Objetivo: robustez contra el wifi del gimnasio, y ver el avance.
 
-- [ ] Auditoría: confirmar que el cálculo de racha use una query acotada (no todo el historial) y que "última vez" traiga el valor real más reciente (no un promedio) — corregir si hace falta
-- [ ] PWA instalable de verdad (manifest + service worker vía `vite-plugin-pwa`) — lo que viste instalarse antes probablemente era el atajo genérico de Chrome, no esto
-- [ ] Persistencia offline nativa de Firestore (`persistentLocalCache` — la API vieja `enableIndexedDbPersistence` está deprecada) — no reinventar una cola offline propia
-- [ ] Dashboard: volumen semanal, 1RM estimado (fórmula de Epley), calculado **en el cliente sobre una query acotada y cacheado** con TanStack Query — sin Cloud Functions todavía, para quedarte en plan Spark sin tarjeta asociada
-- [ ] Alertas sonoras/vibración al finalizar el descanso
+- [x] Auditoría: confirmar que el cálculo de racha use una query acotada (no todo el historial) y que "última vez" traiga el valor real más reciente (no un promedio) — corregir si hace falta
+- [x] PWA instalable de verdad (manifest + service worker vía `vite-plugin-pwa`) — lo que viste instalarse antes probablemente era el atajo genérico de Chrome, no esto
+- [x] Persistencia offline nativa de Firestore (`persistentLocalCache` — la API vieja `enableIndexedDbPersistence` está deprecada) — no reinventar una cola offline propia
+- [x] Dashboard: volumen semanal, 1RM estimado (fórmula de Epley), calculado **en el cliente sobre una query acotada y cacheado** con TanStack Query — sin Cloud Functions todavía, para quedarte en plan Spark sin tarjeta asociada
+- [x] Alertas sonoras/vibración al finalizar el descanso
 
 ## Fase 2 — Flexibilidad extrema y gamificación
 
