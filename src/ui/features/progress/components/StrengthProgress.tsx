@@ -258,7 +258,7 @@ export function StrengthProgress() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1C1C1E', borderColor: '#333', borderRadius: '12px', fontSize: '12px' }}
                       itemStyle={{ color: '#fff', fontWeight: 'bold' }}
-                      formatter={(value: number) => [`${value} kg`, 'Peso']}
+                      formatter={(value: any) => [`${value} kg`, 'Peso']}
                     />
                     <Line 
                       type="monotone" 

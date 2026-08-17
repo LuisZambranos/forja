@@ -542,14 +542,14 @@ export default function FocusMode() {
             <div className="absolute inset-0 bg-highlight/30 blur-2xl rounded-full animate-pulse" />
             
             {/* Círculo del trofeo */}
-            <div className="w-36 h-36 rounded-full border-4 border-highlight/30 bg-gradient-to-br from-highlight/20 to-highlight/5 flex items-center justify-center animate-[bounce_3s_infinite] shadow-[0_0_30px_rgba(255,144,0,0.2)] backdrop-blur-md relative z-10">
+            <div className="w-36 h-36 rounded-full border-4 border-highlight/30 bg-linear-to-br from-highlight/20 to-highlight/5 flex items-center justify-center animate-[bounce_3s_infinite] shadow-[0_0_30px_rgba(255,144,0,0.2)] backdrop-blur-md relative z-10">
               <span className="text-7xl drop-shadow-2xl">🏆</span>
             </div>
           </div>
           
           <h1 className="text-4xl font-black text-text mb-3 tracking-tight text-center">¡Misión Cumplida!</h1>
           
-          <p className="text-text-muted text-sm mb-8 text-center leading-relaxed max-w-[280px]">
+          <p className="text-text-muted text-sm mb-8 text-center leading-relaxed max-w-70">
             Has superado tu rutina de hoy. Estos son los increíbles resultados de tu esfuerzo:
           </p>
 
