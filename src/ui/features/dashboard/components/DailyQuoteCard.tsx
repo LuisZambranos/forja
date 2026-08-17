@@ -19,10 +19,15 @@ export function DailyQuoteCard() {
       {/* Botón para cambiar de frase */}
       <button 
         onClick={() => setOffset(prev => prev + 1)}
-        className="absolute top-4 right-4 p-2 rounded-full bg-surface-alt/50 hover:bg-primary/20 text-text-muted hover:text-primary transition-all active:scale-90 active:rotate-180 duration-300"
+        className="absolute top-4 right-2 rounded-full bg-linear-to-br from-primary to-highlight p-[1.5px] shadow-[0_-4px_12px_rgba(139,92,246,0.4),0_4px_12px_rgba(255,107,0,0.4)] hover:shadow-[0_-6px_16px_rgba(139,92,246,0.6),0_6px_16px_rgba(255,107,0,0.6)] transition-all hover:scale-110 active:scale-95 duration-300 group"
         aria-label="Siguiente frase"
       >
-        <Dices className="w-5 h-5" />
+        <div className="p-1.5 rounded-full bg-surface/90 backdrop-blur-md group-hover:bg-surface/70 transition-colors flex items-center justify-center">
+          <Dices 
+            className="w-4 h-4 text-highlight drop-shadow-sm transition-transform duration-500 ease-out" 
+            style={{ transform: `rotate(${offset * 180}deg)` }}
+          />
+        </div>
       </button>
 
       {/* Contenedor animado por key */}
