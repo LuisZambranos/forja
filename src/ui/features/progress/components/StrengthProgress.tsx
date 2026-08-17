@@ -198,7 +198,7 @@ export function StrengthProgress() {
                   <Info className="w-3.5 h-3.5 text-text-muted transition-colors" />
                   
                   {/* Tooltip */}
-                  <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
+                  <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible transition-all z-20 pointer-events-none">
                     <p className="text-xs leading-relaxed text-text-muted normal-case font-medium">
                       El <strong className="text-text">1RM (Una Repetición Máxima)</strong> es el peso máximo que podrías levantar una sola vez. Epley lo estima usando tu mejor serie para medir tu fuerza sin riesgos.
                     </p>
@@ -231,7 +231,7 @@ export function StrengthProgress() {
                 <Info className="w-4 h-4 text-text-muted transition-colors" />
                 
                 {/* Tooltip */}
-                <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20">
+                <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible transition-all z-20 pointer-events-none">
                   <p className="text-xs text-text-muted normal-case font-medium leading-relaxed">
                     Muestra el peso más alto que levantaste en este ejercicio cada día. Útil para ver tu <strong className="text-text">progresión de fuerza</strong> en el tiempo.
                   </p>
@@ -304,7 +304,7 @@ export function StrengthProgress() {
                         <span className="text-[10px] text-text-muted font-bold uppercase">Eq. 1RM</span>
                         
                         {/* Tooltip */}
-                        <div className="absolute bottom-full right-0 mb-2 w-52 p-2.5 bg-surface-alt border border-border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 text-left pointer-events-none">
+                        <div className="absolute bottom-full right-0 mb-2 w-52 p-2.5 bg-surface-alt border border-border rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible group-focus:opacity-100 group-focus:visible transition-all z-20 text-left pointer-events-none">
                           <p className="text-[11px] text-text-muted normal-case font-medium leading-relaxed">
                             <strong className="text-text">1RM Equivalente.</strong> Sirve para comparar qué serie fue "más fuerte", equilibrando el peso y las repeticiones.
                           </p>
