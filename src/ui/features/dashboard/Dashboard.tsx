@@ -71,7 +71,6 @@ export default function Dashboard() {
         {/* ── Frase del día ── */}
         <DailyQuoteCard />
 
-
         {/* ── CTA: Rutina de hoy ── */}
         <WorkoutCTA loadingRoutines={loadingRoutines} todaysRoutine={todaysRoutine} routines={routines} />
 

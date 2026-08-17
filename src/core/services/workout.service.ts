@@ -73,6 +73,7 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
   if (userSnap.exists()) {
     const userData = userSnap.data();
     const currentStreak = userData.current_streak || 0;
+    const maxStreak = userData.max_streak || 0;
     const lastWorkoutDateStr = userData.last_workout_date || '';
     
     const today = new Date();
@@ -80,6 +81,7 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
     
     let newStreak = currentStreak;
     let newDate = todayStr;
+    let newMaxStreak = maxStreak;
 
     if (lastWorkoutDateStr !== todayStr) {
       const yesterday = new Date();
@@ -92,10 +94,15 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
         newStreak = 1;
       }
     }
+    
+    if (newStreak > newMaxStreak) {
+      newMaxStreak = newStreak;
+    }
     const sessionTonnage = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
     
     batch.set(userRef, {
       current_streak: newStreak,
+      max_streak: newMaxStreak,
       last_workout_date: newDate,
       lifetime_tonnage: increment(sessionTonnage)
     }, { merge: true });

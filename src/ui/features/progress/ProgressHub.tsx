@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Dumbbell, Scale, Flame, CalendarDays } from 'lucide-react';
 import { StrengthProgress } from './components/StrengthProgress';
 import { BodyEvolution } from './components/BodyEvolution';
@@ -8,7 +9,17 @@ import { WorkoutHistory } from './components/WorkoutHistory';
 type TabId = 'strength' | 'body' | 'achievements' | 'history';
 
 export default function ProgressHub() {
-  const [activeTab, setActiveTab] = useState<TabId>('strength');
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<TabId>(
+    (location.state as any)?.tab || 'strength'
+  );
+
+  // If the user navigates to /progress again via an internal link, reset if provided
+  useEffect(() => {
+    if ((location.state as any)?.tab) {
+      setActiveTab((location.state as any).tab);
+    }
+  }, [location.state]);
 
   const tabs = [
     { id: 'strength', label: 'Fuerza', icon: Dumbbell },
@@ -19,7 +30,7 @@ export default function ProgressHub() {
 
   return (
     <div className="min-h-dvh flex flex-col bg-bg max-w-lg mx-auto pb-24">
-      <header className="px-4 pt-8 pb-4 flex flex-col gap-4 sticky top-0 bg-bg/95 backdrop-blur-md z-10">
+      <header className="px-4 pt-8 pb-4 flex flex-col gap-4 sticky top-0 bg-bg/95 backdrop-blur-md z-50">
         <h1 className="text-2xl font-black text-text tracking-wide">Mi Progreso</h1>
         
         {/* Navegación por Pestañas */}
