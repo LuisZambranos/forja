@@ -58,6 +58,7 @@ export interface WorkoutSession {
   finished_at: number;
   duration_seconds: number;
   sets: WorkoutSet[];
+  exercise_ids: string[];
 }
 
 export interface BodyMetric {

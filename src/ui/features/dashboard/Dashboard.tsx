@@ -46,7 +46,7 @@ export default function Dashboard() {
     <div className="max-w-lg mx-auto min-h-dvh flex flex-col">
 
       {/* ── AppBar ── */}
-      <header className="flex items-center justify-between px-4 pt-4 pb-4">
+      <header className="flex items-center justify-between px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-4">
         <div className="flex items-center gap-1">
           <img src={logoNoBg} alt="Forja Logo" className="w-14 h-14 object-contain" />
           <span className="text-xl font-black tracking-widest text-primary uppercase">Forja</span>

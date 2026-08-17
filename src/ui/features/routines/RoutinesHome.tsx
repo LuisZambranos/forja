@@ -16,7 +16,7 @@ export default function RoutinesHome() {
 
   return (
     <div className="min-h-dvh flex flex-col bg-bg max-w-lg mx-auto pb-24">
-      <header className="px-4 pt-8 pb-4 flex items-center justify-between sticky top-0 bg-bg/95 backdrop-blur-md z-10">
+      <header className="px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between sticky top-0 bg-bg/95 backdrop-blur-md z-10">
         <h1 className="text-2xl font-black text-text tracking-wide">Mis Rutinas</h1>
       </header>
 

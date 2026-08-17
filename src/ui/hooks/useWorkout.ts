@@ -1,5 +1,5 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getWorkoutSessionsByUser, finishWorkoutAndStreak } from '@core/services/workout.service';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { getWorkoutSessionsByUser, finishWorkoutAndStreak, getWorkoutHistoryPaginated } from '@core/services/workout.service';
 import type { WorkoutSession, WorkoutSet } from '@core/models';
 
 export function useWorkoutSessions(uid?: string, timeRangeMs?: number) {
@@ -8,6 +8,17 @@ export function useWorkoutSessions(uid?: string, timeRangeMs?: number) {
     queryFn: () => getWorkoutSessionsByUser(uid!, timeRangeMs),
     enabled: !!uid,
     staleTime: 1000 * 60 * 15
+  });
+}
+
+export function useWorkoutHistoryInfinite(uid?: string) {
+  return useInfiniteQuery({
+    queryKey: ['workout_history_infinite', uid],
+    queryFn: ({ pageParam }) => getWorkoutHistoryPaginated(uid!, pageParam, 10),
+    getNextPageParam: (lastPage) => lastPage.lastDoc || undefined,
+    enabled: !!uid,
+    staleTime: 1000 * 60 * 5,
+    initialPageParam: null as any,
   });
 }
 

@@ -230,8 +230,7 @@ export function StrengthProgress() {
                     1RM Estimado (Epley)
                   </p>
                   <Info className="w-3.5 h-3.5 text-text-muted transition-colors" />
-                  
-                  <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl z-20 pointer-events-none tooltip-content">
+                  <div className="absolute bottom-full left-0 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl z-100 pointer-events-none tooltip-content">
                     <p className="text-xs leading-relaxed text-text-muted normal-case font-medium">
                       El <strong className="text-text">1RM (Una Repetición Máxima)</strong> es el peso máximo que podrías levantar una sola vez. Epley lo estima usando tu mejor serie para medir tu fuerza sin riesgos.
                     </p>
@@ -337,8 +336,7 @@ export function StrengthProgress() {
                       <div tabIndex={0} className="relative group flex items-center gap-1 justify-end outline-none cursor-help">
                         <Info className="w-3 h-3 text-text-muted opacity-60" />
                         <span className="text-[10px] text-text-muted font-bold uppercase">Eq. 1RM</span>
-                        
-                        <div className="absolute bottom-full right-0 mb-2 w-52 p-2.5 bg-surface-alt border border-border rounded-xl shadow-xl z-20 text-left pointer-events-none tooltip-content">
+                        <div className="absolute bottom-full right-0 mb-2 w-52 p-2.5 bg-surface-alt border border-border rounded-xl shadow-xl z-100 text-left pointer-events-none tooltip-content">
                           <p className="text-[11px] text-text-muted normal-case font-medium leading-relaxed">
                             <strong className="text-text">1RM Equivalente.</strong> Sirve para comparar qué serie fue "más fuerte", equilibrando el peso y las repeticiones.
                           </p>
@@ -355,14 +353,13 @@ export function StrengthProgress() {
       )}
 
       {/* Mapa Muscular (8 Semanas) - Nuevo Hogar */}
-      <div className="bg-surface border border-border p-6 rounded-3xl flex flex-col items-center relative overflow-hidden mt-2">
+      <div className="bg-surface border border-border p-6 rounded-3xl flex flex-col items-center relative mt-2">
         <div tabIndex={0} className="relative group flex items-center gap-1.5 mb-1 w-max outline-none cursor-help z-20">
           <span className="text-sm font-bold uppercase tracking-widest text-text-muted">
             Mapa Muscular
           </span>
           <Info className="w-4 h-4 text-text-muted" />
-          
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl pointer-events-none text-left tooltip-content">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-surface-alt border border-border rounded-xl shadow-xl z-100 pointer-events-none text-left tooltip-content">
             <p className="text-xs text-text-muted normal-case font-medium leading-relaxed">
               Distribución del volumen de tus series en las <strong className="text-text">últimas 8 semanas</strong>. Ayuda a identificar visualmente si estás ignorando algún grupo muscular.
             </p>

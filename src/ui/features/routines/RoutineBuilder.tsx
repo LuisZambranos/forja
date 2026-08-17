@@ -209,8 +209,8 @@ export default function RoutineBuilder() {
   const isSaving = isCreating || isUpdating;
 
   return (
-    <div className="min-h-dvh flex flex-col bg-bg max-w-lg mx-auto pb-32 relative">
-      <header className="px-4 pt-8 pb-4 flex items-center justify-between sticky top-0 bg-bg/95 backdrop-blur-md z-20">
+    <div className="min-h-dvh flex flex-col bg-bg max-w-lg mx-auto pb-32 animate-in slide-in-from-right duration-300">
+      <header className="px-4 pt-[max(2rem,env(safe-area-inset-top))] pb-4 flex items-center justify-between sticky top-0 bg-bg/95 backdrop-blur-md z-20">
         <div className="flex items-center gap-3">
           <Link to="/routines" className="w-10 h-10 rounded-xl bg-surface border border-border flex items-center justify-center text-text-muted hover:text-text hover:bg-surface-alt transition-colors active:scale-95">
             <ChevronLeft className="w-6 h-6" />

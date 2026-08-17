@@ -4,6 +4,7 @@ import { useAuth } from '@ui/hooks/useAuth';
 import { useWorkoutStore } from '../../../store/workoutStore';
 import type { Routine, WorkoutSet } from '@core/models';
 import { Button } from '@ui/components/ui/Button';
+import { Modal } from '@ui/components/ui/Modal';
 import { Play, Timer, ChevronRight, Check, X } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine } from '@ui/hooks/useRoutines';
@@ -56,6 +57,34 @@ export default function FocusMode() {
   const [saving, setSaving] = useState(false);
   const [startedAt] = useState(Date.now());
   const [audioCtx, setAudioCtx] = useState<AudioContext | null>(null);
+
+  // Estados para Modal de Confirmación de Salida
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [exitConfirmUnlocked, setExitConfirmUnlocked] = useState(false);
+
+  // Prevenir volver atrás por error (swipe back o botón atrás)
+  useEffect(() => {
+    window.history.pushState({ focusMode: true }, '');
+
+    const handlePopState = () => {
+      window.history.pushState({ focusMode: true }, '');
+      setShowExitConfirm(true);
+      setExitConfirmUnlocked(false);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleExitRequest = () => {
+    setShowExitConfirm(true);
+    setExitConfirmUnlocked(false);
+  };
+
+  const confirmExit = () => {
+    clearWorkout();
+    navigate('/', { replace: true });
+  };
 
   // Gamificación: Progreso
   const [progressCount, setProgressCount] = useState(0);
@@ -185,8 +214,8 @@ export default function FocusMode() {
   const totalRoutineSets = routine.exercises.reduce((acc, ex) => acc + (ex.target_sets ?? 3), 0) || 1;
   const progressPercent = Math.min(100, Math.round((completedSets.length / totalRoutineSets) * 100));
 
-  const GlobalHeader = ({ title, subtitle, showClose = false }: { title: string, subtitle: string, showClose?: boolean }) => (
-    <div className="mb-8 pt-2">
+  const GlobalHeader = ({ title, subtitle }: { title: string, subtitle: string }) => (
+    <div className="mb-8 pt-[max(0.5rem,env(safe-area-inset-top))]">
       <div className="flex justify-between items-end mb-2">
         <div>
           <span className="text-[10px] font-bold uppercase tracking-widest text-text-muted block mb-0.5">{title}</span>
@@ -194,11 +223,9 @@ export default function FocusMode() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs font-black text-highlight">{progressPercent}%</span>
-          {showClose && (
-            <button onClick={() => navigate('/')} className="text-text-muted p-1 hover:text-text active:scale-95 transition-all bg-surface rounded-full">
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <button onClick={handleExitRequest} className="text-text-muted p-1 hover:text-text active:scale-95 transition-all bg-surface rounded-full">
+            <X className="w-5 h-5" />
+          </button>
         </div>
       </div>
       <div className="h-1.5 w-full bg-surface-alt rounded-full overflow-hidden">
@@ -207,8 +234,59 @@ export default function FocusMode() {
           style={{ width: `${progressPercent}%` }}
         />
       </div>
+      <ExitConfirmModal />
     </div>
   );
+
+  const ExitConfirmModal = () => {
+    return (
+      <Modal
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        title="¿Seguro que quieres salir?"
+        footer={
+          <>
+            <Button 
+              variant="secondary" 
+              className="flex-1"
+              onClick={() => setShowExitConfirm(false)}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="danger" 
+              className="flex-1"
+              disabled={!exitConfirmUnlocked}
+              onClick={confirmExit}
+            >
+              Salir
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col items-center text-center">
+          <p className="text-sm text-text-muted mb-6">
+            El progreso de este entrenamiento no se guardará y se perderá por completo.
+          </p>
+
+          <label className="flex items-center gap-3 bg-bg p-4 rounded-2xl w-full cursor-pointer border border-border group">
+            <div className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input 
+                type="checkbox" 
+                className="sr-only" 
+                checked={exitConfirmUnlocked}
+                onChange={(e) => setExitConfirmUnlocked(e.target.checked)}
+              />
+              <div className={`w-11 h-6 rounded-full transition-all flex items-center p-0.5 ${exitConfirmUnlocked ? 'bg-danger' : 'bg-surface-alt'}`}>
+                <div className={`w-5 h-5 rounded-full border transition-all shadow-sm ${exitConfirmUnlocked ? 'translate-x-full bg-white border-white' : 'translate-x-0 bg-text border-border'}`} />
+              </div>
+            </div>
+            <span className="text-xs font-bold text-text flex-1 text-left">Confirmo que deseo perder mi progreso</span>
+          </label>
+        </div>
+      </Modal>
+    );
+  };
 
   const handleNumericInput = (val: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
     let safeVal = val.replace(',', '.');
@@ -320,7 +398,6 @@ export default function FocusMode() {
         <GlobalHeader 
           title="Progreso" 
           subtitle={`Ejercicio ${exIndex + 1} de ${routine.exercises.length}`} 
-          showClose 
         />
 
         {/* Nombre del ejercicio */}

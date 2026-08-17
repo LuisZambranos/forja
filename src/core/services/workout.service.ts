@@ -1,4 +1,4 @@
-import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, getDoc, writeBatch, increment, limit, QueryConstraint } from 'firebase/firestore';
+import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, getDoc, writeBatch, increment, limit, startAfter, QueryConstraint } from 'firebase/firestore';
 
 export interface LastTimeStats {
   weight: number;
@@ -44,6 +44,29 @@ export async function getWorkoutSessionsByUser(uid: string, timeRangeMs?: number
   const snap = await getDocs(q);
   
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutSession));
+}
+
+export async function getWorkoutHistoryPaginated(uid: string, pageParam: any | null, limitCount: number = 10) {
+  const constraints: QueryConstraint[] = [
+    where('owner_id', '==', uid),
+    orderBy('finished_at', 'desc'),
+    limit(limitCount)
+  ];
+  
+  if (pageParam) {
+    constraints.push(startAfter(pageParam));
+  }
+  
+  const q = query(collection(db, 'workout_sessions'), ...constraints);
+  const snap = await getDocs(q);
+  
+  const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutSession));
+  const lastDoc = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+  
+  return {
+    data,
+    lastDoc
+  };
 }
 
 export async function getWorkoutSessionById(id: string): Promise<WorkoutSession | null> {
