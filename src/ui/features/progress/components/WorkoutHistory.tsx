@@ -80,7 +80,7 @@ function SessionDetailsModal({ session, onClose, getExerciseName }: { session: W
         {/* Ejercicios */}
         <div className="flex justify-between items-center mb-4 border-b border-border/50 pb-2">
           <h3 className="text-sm font-bold uppercase tracking-widest text-text-muted">Ejercicios Realizados</h3>
-          <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md">{Object.keys(groupedSets).length}/{session.exercise_ids.length} completados</span>
+          <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md">{Object.keys(groupedSets).length}/{session.exercise_ids?.length || 0} completados</span>
         </div>
         <div className="flex flex-col gap-4">
           {Object.entries(groupedSets).map(([exId, sets], idx) => (
@@ -252,12 +252,12 @@ export function WorkoutHistory() {
                           </div>
                           <div className="h-6 w-px bg-border/50" />
                           <div className="pb-0.5">
-                            <span className="text-sm font-bold text-text">{session.sets.length}</span>
+                            <span className="text-sm font-bold text-text">{session.sets?.length || 0}</span>
                             <span className="text-[10px] text-text-muted ml-1">SERIES</span>
                           </div>
                           <div className="h-6 w-px bg-border/50" />
                           <div className="pb-0.5">
-                            <span className="text-sm font-bold text-text">{session.exercise_ids.length}</span>
+                            <span className="text-sm font-bold text-text">{session.exercise_ids?.length || 0}</span>
                             <span className="text-[10px] text-text-muted ml-1">EJER.</span>
                           </div>
                         </div>
