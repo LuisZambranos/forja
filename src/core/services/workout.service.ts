@@ -160,7 +160,7 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
     if (newStreak > newMaxStreak) {
       newMaxStreak = newStreak;
     }
-    const sessionTonnage = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
+    const sessionTonnage = completedSets.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0);
     
     batch.set(userRef, {
       current_streak: newStreak,
@@ -186,7 +186,7 @@ export async function updateWorkoutSessionAndStreak(
   // También sumamos el tonelaje nuevo de esta sesión retomada
   if (sessionData.owner_id && completedSets.length > 0) {
     const userRef = doc(db, 'users', sessionData.owner_id);
-    const sessionTonnage = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
+    const sessionTonnage = completedSets.reduce((acc, set) => acc + ((set.weight || 0) * (set.reps || 0)), 0);
     batch.update(userRef, {
       lifetime_tonnage: increment(sessionTonnage)
     });

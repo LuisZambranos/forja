@@ -96,7 +96,9 @@ export function StrengthProgress() {
   const { chartData, prList, bestSet } = useMemo(() => {
     if (!selectedExerciseId) return { chartData: [], prList: [], bestSet: null };
     
-    const setsForEx = allSetsWithDates.filter(s => s.exercise_id === selectedExerciseId && s.weight > 0 && s.reps > 0);
+    const setsForEx = allSetsWithDates
+      .filter(s => s.exercise_id === selectedExerciseId && (s.weight || 0) > 0 && (s.reps || 0) > 0)
+      .map(s => ({ ...s, weight: s.weight || 0, reps: s.reps || 0 }));
     
     if (setsForEx.length === 0) return { chartData: [], prList: [], bestSet: null };
 

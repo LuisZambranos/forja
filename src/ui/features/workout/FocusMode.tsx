@@ -803,9 +803,9 @@ export default function FocusMode() {
             )}
           </div>
 
-          {/* Tarjeta de Calentamiento (solo si hay datos previos) */}
-          {lastTime && setsDoneForThisEx === 0 && (
-            <WarmupSuggestionCard lastWeight={lastTime.weight} />
+          {/* Tarjeta de Calentamiento (solo si hay datos previos y no es cardio) */}
+          {lastTime && setsDoneForThisEx === 0 && currentEx?.type !== 'cardio' && (
+            <WarmupSuggestionCard lastWeight={lastTime.weight || 0} />
           )}
 
           {/* Target */}

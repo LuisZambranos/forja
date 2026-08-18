@@ -52,7 +52,7 @@ function SessionDetailsModal({ session, onClose, getExerciseName }: { session: W
     return acc;
   }, {} as Record<string, typeof session.sets>);
 
-  const totalTonnage = session.sets.reduce((acc, s) => acc + (s.weight * s.reps), 0);
+  const totalTonnage = session.sets.reduce((acc, s) => acc + ((s.weight || 0) * (s.reps || 0)), 0);
 
   const handleDelete = () => {
     if (confirmDelete) {
@@ -264,7 +264,7 @@ export function WorkoutHistory() {
             </h3>
             
             {sessions.map((session) => {
-              const tonnage = session.sets.reduce((acc, s) => acc + (s.weight * s.reps), 0);
+              const tonnage = session.sets.reduce((acc, s) => acc + ((s.weight || 0) * (s.reps || 0)), 0);
               const isEpic = tonnage > 3000; // Resaltar sesiones pesadas
               
               return (
