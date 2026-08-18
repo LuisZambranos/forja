@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute } from 'workbox-precaching';
+import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
+import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { initializeApp } from 'firebase/app';
 import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw';
 
@@ -7,6 +8,16 @@ declare let self: ServiceWorkerGlobalScope;
 
 // Inject precache manifest
 precacheAndRoute(self.__WB_MANIFEST || []);
+
+// Fallback para SPA (Single Page Application). Asegura que /rutinas, /perfil, etc. 
+// y la ruta raíz (/) carguen el index.html cuando estemos offline.
+try {
+  const handler = createHandlerBoundToURL('/index.html');
+  const navigationRoute = new NavigationRoute(handler);
+  registerRoute(navigationRoute);
+} catch (error) {
+  console.error('Error registrando fallback de navegación:', error);
+}
 
 // We use import.meta.env to get the Firebase config at build time
 const firebaseConfig = {
