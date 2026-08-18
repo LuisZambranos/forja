@@ -21,6 +21,7 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
   const [name, setName] = useState('');
   const [muscleGroup, setMuscleGroup] = useState('');
   const [equipment, setEquipment] = useState('');
+  const [type, setType] = useState<'strength' | 'cardio'>('strength');
   
   const [isNewCategory, setIsNewCategory] = useState(false);
   const [isNewEquipment, setIsNewEquipment] = useState(false);
@@ -40,10 +41,12 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
         setName(initialData.name);
         setMuscleGroup(initialData.muscle_group || '');
         setEquipment(initialData.equipment || '');
+        setType(initialData.type || 'strength');
       } else {
         setName('');
         setMuscleGroup('');
         setEquipment('');
+        setType('strength');
       }
       setIsNewCategory(false);
       setIsNewEquipment(false);
@@ -64,7 +67,10 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
   });
 
   // Equipamientos
-  const defaultEquipments = ['Peso corporal', 'Mancuernas', 'Barra', 'Máquina', 'Polea', 'Banda elástica'];
+  const defaultEquipments = type === 'cardio' 
+    ? ['Cinta', 'Bicicleta', 'Elíptica', 'Escaladora', 'Remo', 'Ninguno']
+    : ['Peso corporal', 'Mancuernas', 'Barra', 'Máquina', 'Polea', 'Banda elástica'];
+    
   const uniqueEquipments = Array.from(new Set([...defaultEquipments, ...exercises.map(ex => ex.equipment).filter(Boolean)]));
   
   const sortedEquipments = uniqueEquipments.sort((a, b) => {
@@ -84,10 +90,11 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
       if (mode === 'create') {
         const id = await createExercise({
           name,
-          muscle_group: muscleGroup,
+          muscle_group: type === 'cardio' ? 'Cardiovascular' : muscleGroup,
           equipment,
           owner_id: user.uid,
-          is_global: false
+          is_global: false,
+          type
         });
         onSuccess?.(id);
       } else if (mode === 'edit' && initialData) {
@@ -95,8 +102,9 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
           id: initialData.id,
           data: {
             name,
-            muscle_group: muscleGroup,
-            equipment
+            muscle_group: type === 'cardio' ? 'Cardiovascular' : muscleGroup,
+            equipment,
+            type
           }
         });
         onSuccess?.(initialData.id);
@@ -115,6 +123,35 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
       title={mode === 'create' ? 'Nuevo Ejercicio' : 'Editar Ejercicio'}
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        {/* Selector de Tipo (Cardio vs Fuerza) */}
+        <div className="flex bg-surface-alt rounded-xl p-1 mb-2 border border-border/50">
+          <button
+            type="button"
+            onClick={() => {
+              setType('strength');
+              setMuscleGroup('');
+            }}
+            className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors ${
+              type === 'strength' ? 'bg-primary text-bg' : 'text-text-muted hover:text-text'
+            }`}
+          >
+            Fuerza
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setType('cardio');
+              setMuscleGroup('Cardiovascular');
+              setEquipment('Cinta');
+            }}
+            className={`flex-1 py-2 text-xs font-bold uppercase tracking-widest rounded-lg transition-colors ${
+              type === 'cardio' ? 'bg-primary text-bg' : 'text-text-muted hover:text-text'
+            }`}
+          >
+            Cardio
+          </button>
+        </div>
+
         <div>
           <label className="text-xs font-bold uppercase tracking-widest text-text-muted mb-1 block">Nombre</label>
           <input 
@@ -123,49 +160,51 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
             value={name}
             onChange={e => setName(e.target.value)}
             className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors"
-            placeholder="Ej. Press Inclinado"
+            placeholder={type === 'cardio' ? 'Ej. Correr en Cinta' : 'Ej. Press Inclinado'}
           />
         </div>
         
-        {/* Selector de Categoría */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-xs font-bold uppercase tracking-widest text-text-muted block">Grupo Muscular</label>
-            <button 
-              type="button" 
-              onClick={() => {
-                setIsNewCategory(!isNewCategory);
-                setMuscleGroup('');
-              }}
-              className="text-xs text-primary font-bold hover:underline"
-            >
-              {isNewCategory ? 'Elegir existente' : '+ Crear categoría'}
-            </button>
+        {/* Selector de Categoría (Oculto en Cardio) */}
+        {type !== 'cardio' && (
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold uppercase tracking-widest text-text-muted block">Grupo Muscular</label>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setIsNewCategory(!isNewCategory);
+                  setMuscleGroup('');
+                }}
+                className="text-xs text-primary font-bold hover:underline"
+              >
+                {isNewCategory ? 'Elegir existente' : '+ Crear categoría'}
+              </button>
+            </div>
+            
+            {isNewCategory ? (
+              <input 
+                type="text" 
+                required
+                value={muscleGroup}
+                onChange={e => setMuscleGroup(e.target.value)}
+                className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors"
+                placeholder="Nombre de la nueva categoría..."
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsCategorySelectorOpen(true)}
+                className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors flex items-center justify-between focus:ring-1 focus:ring-primary shadow-sm"
+              >
+                <span className={muscleGroup ? 'text-text' : 'text-text-muted'}>
+                  {muscleGroup || 'Selecciona una categoría...'}
+                </span>
+                <ChevronDown className="w-4 h-4 text-text-muted" />
+              </button>
+            )}
           </div>
-          
-          {isNewCategory ? (
-            <input 
-              type="text" 
-              required
-              value={muscleGroup}
-              onChange={e => setMuscleGroup(e.target.value)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors"
-              placeholder="Nombre de la nueva categoría..."
-              autoFocus
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsCategorySelectorOpen(true)}
-              className="w-full h-12 bg-bg border border-border rounded-xl px-4 text-text outline-none transition-colors flex items-center justify-between focus:ring-1 focus:ring-primary shadow-sm"
-            >
-              <span className={muscleGroup ? 'text-text' : 'text-text-muted'}>
-                {muscleGroup || 'Selecciona una categoría...'}
-              </span>
-              <ChevronDown className="w-4 h-4 text-text-muted" />
-            </button>
-          )}
-        </div>
+        )}
 
         {/* Selector de Equipamiento */}
         <div>

@@ -5,22 +5,27 @@ import { useWorkoutStore } from '../../../store/workoutStore';
 import type { Routine, WorkoutSet, WorkoutSession } from '@core/models';
 import { Button } from '@ui/components/ui/Button';
 import { Modal } from '@ui/components/ui/Modal';
-import { Play, Timer, ChevronRight, Check, X, Activity } from 'lucide-react';
+import { Play, Timer, ChevronRight, Check, X, Activity, RefreshCw } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine } from '@ui/hooks/useRoutines';
-import { getIncompleteSessionToday } from '@core/services/workout.service';
+import { getIncompleteSessionToday, getLastExerciseStats } from '@core/services/workout.service';
 import { useSaveWorkoutSession, useUpdateWorkoutSession } from '@ui/hooks/useWorkout';
-import { getLastExerciseStats } from '@core/services/workout.service';
 import { StreakCelebration } from './components/StreakCelebration';
+import { LiveSubstituteModal } from './components/LiveSubstituteModal';
+import { ExerciseModal } from '@ui/features/exercises/components/ExerciseModal';
+import { WarmupSuggestionCard } from './components/WarmupSuggestionCard';
+import { PlateCalculator } from './components/PlateCalculator';
 
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
 // ──────────────────────────────────────────────
-type Phase = 'resume_prompt' | 'intro' | 'active' | 'resting' | 'completed' | 'streak_celebration';
+type Phase = 'resume_prompt' | 'intro' | 'active' | 'resting' | 'completed' | 'rpe_feedback' | 'streak_celebration';
 
 interface LastTimeStats {
-  weight: number;
-  reps: number;
+  weight?: number;
+  reps?: number;
+  duration?: number;
+  distance?: number;
   totalSets: number;
 }
 
@@ -58,6 +63,9 @@ export default function FocusMode() {
   const [planIndex, setPlanIndex] = useState(0);
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
+  const [duration, setDuration] = useState('');
+  const [distance, setDistance] = useState('');
+  const [setType] = useState<'normal'|'warmup'|'drop'>('normal');
   const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
   const [skippedExercises, setSkippedExercises] = useState<string[]>([]);
   const [lastTime, setLastTime] = useState<LastTimeStats | null>(null);
@@ -71,6 +79,13 @@ export default function FocusMode() {
   // Estados para Modal de Confirmación de Salida
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [exitConfirmUnlocked, setExitConfirmUnlocked] = useState(false);
+
+  // Substitute state
+  const [showSubstituteModal, setShowSubstituteModal] = useState(false);
+  const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
+
+  // RPE state
+  const [globalRpe, setGlobalRpe] = useState(5);
 
   // Prevenir volver atrás por error (swipe back o botón atrás)
   useEffect(() => {
@@ -220,30 +235,40 @@ export default function FocusMode() {
 
   // Cargar "última vez" cuando cambia el ejercicio
   useEffect(() => {
-    if (!routine || !user || plan.length === 0) return;
+    if (!routine || plan.length === 0) return;
     const currentPlan = plan[planIndex];
     if (!currentPlan) return;
     const ex = routine.exercises[currentPlan.routineExIndex];
-    if (!ex) return;
+    if (ex) {
+      if (ex.target_reps && !reps) setReps(String(ex.target_reps));
+      if (ex.target_duration && !duration) setDuration(String(ex.target_duration));
+      if (ex.target_distance && !distance) setDistance(String(ex.target_distance));
+    }
 
     setLoadingLast(true);
-    getLastExerciseStats(user.uid, ex.exercise_id)
+    getLastExerciseStats(user!.uid, ex.exercise_id)
       .then(res => {
         setLastTime(res);
-        // Si no hemos cargado peso desde el historial reciente en esta misma sesión:
         const lastSetThisSession = completedSets.slice().reverse().find(s => s.exercise_id === ex.exercise_id);
         if (!lastSetThisSession) {
-          if (res) {
-            setWeight(String(res.weight));
-            setReps(String(res.reps));
-          } else {
-            setWeight('');
-            setReps(String(ex.target_reps));
-          }
+            if (res) {
+              setWeight(String(res.weight || ''));
+              setReps(String(res.reps || ''));
+              setDuration(String(res.duration || ''));
+              setDistance(String(res.distance || ''));
+            }
+        } else {
+          setWeight(String(lastSetThisSession.weight || ''));
+          setReps(String(lastSetThisSession.reps || ''));
+          setDuration(String(lastSetThisSession.duration || ''));
+          setDistance(String(lastSetThisSession.distance || ''));
         }
       })
+      .catch(err => {
+        console.error('Error fetching last stat:', err);
+      })
       .finally(() => setLoadingLast(false));
-  }, [planIndex, plan, routine, user]); // no dependemos de completedSets para evitar loops
+  }, [planIndex, plan, routine, user, completedSets]);
 
   const adjustValue = (setter: React.Dispatch<React.SetStateAction<string>>, amount: number, min: number = 0) => {
     setter(prev => {
@@ -328,6 +353,7 @@ export default function FocusMode() {
   const currentEx = allExercises.find(e => e.id === currentRoutineEx?.exercise_id);
   const targetSets = currentRoutineEx?.target_sets ?? 3;
   const isSuperset = !!currentRoutineEx?.superset_id;
+  const setsDoneForThisEx = completedSets.filter(s => s.exercise_id === currentRoutineEx?.exercise_id).length;
 
   // ── Helpers Globales ──
   const totalRoutineSets = routine.exercises.reduce((acc, ex) => acc + (ex.target_sets ?? 3), 0) || 1;
@@ -448,21 +474,51 @@ export default function FocusMode() {
   const handleConfirmSet = () => {
     const w = parseFloat(weight) || 0;
     const r = parseInt(reps)    || 0;
-    if (r === 0) return;
+    const d = parseFloat(duration) || 0;
 
-    const newSet: WorkoutSet = {
+    if (currentEx?.type === 'cardio') {
+      if (d === 0) return;
+    } else {
+      if (r === 0) return;
+    }
+
+    const rawSet: WorkoutSet = {
       exercise_id: currentRoutineEx.exercise_id,
-      weight: w, reps: r, set_type: 'normal'
+      set_type: setType,
+      weight: weight ? parseFloat(weight) : undefined,
+      reps: reps ? parseInt(reps, 10) : undefined,
+      duration: duration ? parseFloat(duration) : undefined,
+      distance: distance ? parseFloat(distance) : undefined
     };
+    
+    // Eliminar campos undefined para evitar error de Firebase (Unsupported field value: undefined)
+    const newSet = Object.fromEntries(Object.entries(rawSet).filter(([_, v]) => v !== undefined)) as WorkoutSet;
+
     const updatedCompletedSets = [...completedSets, newSet];
     setCompletedSets(updatedCompletedSets);
 
     if (lastTime && !progressExercises.has(currentRoutineEx.exercise_id)) {
-      const isBetterWeight = w > lastTime.weight;
-      const isBetterReps = w === lastTime.weight && r > lastTime.reps;
-      const isBetterSets = w === lastTime.weight && r === lastTime.reps && (setIndex + 1) > lastTime.totalSets;
+      let isBetter = false;
       
-      if (isBetterWeight || isBetterReps || isBetterSets) {
+      if (currentEx?.type === 'cardio') {
+        const currentDur = parseFloat(duration) || 0;
+        const currentDist = parseFloat(distance) || 0;
+        const lastDur = lastTime.duration || 0;
+        const lastDist = lastTime.distance || 0;
+        
+        isBetter = currentDur > lastDur || (currentDur === lastDur && currentDist > lastDist);
+      } else {
+        const lastW = lastTime.weight || 0;
+        const lastR = lastTime.reps || 0;
+        
+        const isBetterWeight = w > lastW;
+        const isBetterReps = w === lastW && r > lastR;
+        const isBetterSets = w === lastW && r === lastR && (setIndex + 1) > lastTime.totalSets;
+        
+        isBetter = isBetterWeight || isBetterReps || isBetterSets;
+      }
+      
+      if (isBetter) {
         setProgressCount(prev => prev + 1);
         progressExercises.add(currentRoutineEx.exercise_id);
       }
@@ -526,6 +582,23 @@ export default function FocusMode() {
     goToNextValidPlan(planIndex, newSkipped);
   };
 
+  // ── Sustituir Ejercicio ──
+  const handleSubstitute = (newExerciseId: string) => {
+    if (!routine || !currentRoutineEx) return;
+    const modifiedRoutine = { ...routine };
+    const currentRoutineExIndex = plan[planIndex].routineExIndex;
+    
+    modifiedRoutine.exercises = modifiedRoutine.exercises.map((ex, i) => {
+      if (i === currentRoutineExIndex) {
+        return { ...ex, exercise_id: newExerciseId };
+      }
+      return ex;
+    });
+
+    setRoutine(modifiedRoutine);
+    setShowSubstituteModal(false);
+  };
+
   // ── Finalizar entrenamiento ──
   const handleFinish = async () => {
     if (!user || !routine) return;
@@ -545,7 +618,8 @@ export default function FocusMode() {
           duration_seconds: (existingSession.duration_seconds || 0) + durationToAdd,
           sets: combinedSets,
           exercise_ids: combinedExerciseIds,
-          skipped_exercise_ids: skippedExercises // Whatever was skipped THIS time
+          skipped_exercise_ids: skippedExercises,
+          global_rpe: globalRpe
         };
 
         updateWorkout({ id: existingSession.id, sessionData, sets: completedSets }).catch(err => {
@@ -561,7 +635,8 @@ export default function FocusMode() {
           duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
           sets: completedSets,
           exercise_ids: exerciseIds,
-          skipped_exercise_ids: skippedExercises
+          skipped_exercise_ids: skippedExercises,
+          global_rpe: globalRpe
         };
 
         saveWorkout({ sessionData, sets: completedSets }).catch(err => {
@@ -654,9 +729,16 @@ export default function FocusMode() {
               </span>
             )}
           </div>
-          <h1 className="text-4xl font-black text-text mb-6 leading-tight">
-            {currentEx?.name || '...'}
-          </h1>
+          <div className="flex flex-col items-center gap-1 mb-6">
+            <h1 className="text-4xl font-black text-text leading-tight text-center">
+              {currentEx?.name || '...'}
+            </h1>
+            {currentEx?.equipment && (
+              <span className="text-xs font-bold text-text-muted uppercase tracking-widest px-3 py-1 bg-surface-alt rounded-full">
+                {currentEx.equipment}
+              </span>
+            )}
+          </div>
 
           {isSuperset && exercisesInSuperset.length > 1 && (
             <div className="bg-highlight/5 border border-highlight/20 rounded-xl p-4 mb-6 text-left">
@@ -681,30 +763,63 @@ export default function FocusMode() {
               <div className="skeleton h-10 rounded-xl" />
             ) : lastTime ? (
               <div className="flex gap-6">
-                <div>
-                  <p className="text-3xl font-black text-text">{lastTime.weight}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
-                  <p className="text-xs text-text-muted mt-1">Peso</p>
-                </div>
-                <div className="w-px bg-border" />
-                <div>
-                  <p className="text-3xl font-black text-text">{lastTime.reps}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
-                  <p className="text-xs text-text-muted mt-1">Reps</p>
-                </div>
-                <div className="w-px bg-border" />
-                <div>
-                  <p className="text-3xl font-black text-text">{lastTime.totalSets}</p>
-                  <p className="text-xs text-text-muted mt-1">Series</p>
-                </div>
+                {currentEx?.type === 'cardio' ? (
+                  <>
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.duration || 0}<span className="text-sm text-text-muted font-normal ml-1">min</span></p>
+                      <p className="text-xs text-text-muted mt-1">Tiempo</p>
+                    </div>
+                    {lastTime.distance ? (
+                      <>
+                        <div className="w-px bg-border" />
+                        <div>
+                          <p className="text-3xl font-black text-text">{lastTime.distance}<span className="text-sm text-text-muted font-normal ml-1">km</span></p>
+                          <p className="text-xs text-text-muted mt-1">Distancia</p>
+                        </div>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.weight || 0}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
+                      <p className="text-xs text-text-muted mt-1">Peso</p>
+                    </div>
+                    <div className="w-px bg-border" />
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.reps || 0}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
+                      <p className="text-xs text-text-muted mt-1">Reps</p>
+                    </div>
+                    <div className="w-px bg-border" />
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.totalSets}</p>
+                      <p className="text-xs text-text-muted mt-1">Series</p>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <p className="text-text-muted text-sm italic">Primera vez. ¡Dale caña!</p>
             )}
           </div>
 
+          {/* Tarjeta de Calentamiento (solo si hay datos previos) */}
+          {lastTime && setsDoneForThisEx === 0 && (
+            <WarmupSuggestionCard lastWeight={lastTime.weight} />
+          )}
+
           {/* Target */}
           <p className="text-center text-text-muted text-sm mb-8">
-            Meta: <span className="text-text font-bold">{targetSets} series × {currentRoutineEx.target_reps} reps</span>
-            {' · '}Descanso: <span className="text-text font-bold">{routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90}s</span>
+            Meta: <span className="text-text font-bold">
+              {currentEx?.type === 'cardio' 
+                ? `${currentRoutineEx.target_duration || 0} min${currentRoutineEx.target_distance ? ` · ${currentRoutineEx.target_distance} km` : ''}` 
+                : `${targetSets} series × ${currentRoutineEx.target_reps || 0} reps`}
+            </span>
+            {currentEx?.type !== 'cardio' && (
+              <>
+                {' · '}Descanso: <span className="text-text font-bold">{routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90}s</span>
+              </>
+            )}
           </p>
         </div>
 
@@ -734,13 +849,45 @@ export default function FocusMode() {
             <Play className="mr-2 fill-current" /> Empezar serie {setIndex + 1}
           </Button>
 
-          <button 
-            onClick={handleSkipExercise}
-            className="h-12 w-full rounded-2xl flex items-center justify-center text-sm font-bold text-text-muted hover:text-text hover:bg-surface-alt/50 transition-all border border-transparent hover:border-border"
-          >
-            Omitir Ejercicio
-          </button>
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <button 
+              onClick={() => setShowSubstituteModal(true)}
+              className="h-12 rounded-2xl flex items-center justify-center text-sm font-bold text-primary hover:bg-primary/10 transition-all border border-primary/20"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Sustituir
+            </button>
+            <button 
+              onClick={handleSkipExercise}
+              className="h-12 rounded-2xl flex items-center justify-center text-sm font-bold text-text-muted hover:text-text hover:bg-surface-alt/50 transition-all border border-transparent hover:border-border"
+            >
+              Omitir Ejercicio
+            </button>
+          </div>
         </div>
+
+        {showSubstituteModal && currentRoutineEx && (
+          <LiveSubstituteModal
+            currentExerciseId={currentRoutineEx.exercise_id}
+            allExercises={allExercises}
+            onClose={() => setShowSubstituteModal(false)}
+            onSubstitute={handleSubstitute}
+            onCreateNew={() => {
+              setShowSubstituteModal(false);
+              setShowCreateExerciseModal(true);
+            }}
+          />
+        )}
+
+        <ExerciseModal
+          isOpen={showCreateExerciseModal}
+          onClose={() => setShowCreateExerciseModal(false)}
+          mode="create"
+          onSuccess={(newId) => {
+            setShowCreateExerciseModal(false);
+            handleSubstitute(newId);
+          }}
+        />
       </div>
     );
   }
@@ -768,51 +915,109 @@ export default function FocusMode() {
           {/* Sugerencia de la última vez */}
           {lastTime && (
             <p className="text-center text-sm text-text-muted">
-              Última vez: <span className="text-text font-bold">{lastTime.weight}kg × {lastTime.reps} reps</span>
+              Última vez: <span className="text-text font-bold">
+                {currentEx?.type === 'cardio' 
+                  ? `${lastTime.duration || 0} min${lastTime.distance ? ` × ${lastTime.distance} km` : ''}` 
+                  : `${lastTime.weight || 0}kg × ${lastTime.reps || 0} reps`}
+              </span>
             </p>
           )}
 
-          {/* Peso */}
-          <div>
-            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
-              Peso (kg)
-            </label>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => adjustValue(setWeight, -2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={weight}
-                onChange={e => handleNumericInput(e.target.value, setWeight)}
-                placeholder={lastTime ? String(lastTime.weight) : '0'}
-                className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
-                  border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
-                  placeholder:text-border transition-colors"
-              />
-              <button type="button" onClick={() => adjustValue(setWeight, 2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
-            </div>
-          </div>
+          {currentEx?.type === 'cardio' ? (
+            <>
+              {/* Duración (Minutos) */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Tiempo (Minutos)
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setDuration, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={duration}
+                    onChange={e => handleNumericInput(e.target.value, setDuration)}
+                    placeholder={lastTime ? String(lastTime.duration) : String(currentRoutineEx?.target_duration || '15')}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setDuration, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+              </div>
 
-          {/* Reps */}
-          <div>
-            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
-              Repeticiones
-            </label>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => adjustValue(setReps, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={reps}
-                onChange={e => handleNumericInput(e.target.value, setReps)}
-                placeholder={lastTime ? String(lastTime.reps) : String(targetSets)}
-                className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
-                  border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
-                  placeholder:text-border transition-colors"
-              />
-              <button type="button" onClick={() => adjustValue(setReps, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
-            </div>
-          </div>
+              {/* Distancia (Km) Opcional */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Distancia (km) - Opcional
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setDistance, -0.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={distance}
+                    onChange={e => handleNumericInput(e.target.value, setDistance)}
+                    placeholder={lastTime ? String(lastTime.distance || '') : ''}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setDistance, 0.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Peso */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Peso (kg)
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setWeight, -2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={weight}
+                    onChange={e => handleNumericInput(e.target.value, setWeight)}
+                    placeholder={lastTime ? String(lastTime.weight) : '0'}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setWeight, 2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+                
+                {/* Calculadora de discos solo si no es cardio */}
+                <PlateCalculator 
+                  weight={parseFloat(weight) || 0} 
+                  equipment={currentEx?.equipment || ''} 
+                />
+              </div>
+
+              {/* Reps */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Repeticiones
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setReps, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={reps}
+                    onChange={e => handleNumericInput(e.target.value, setReps)}
+                    placeholder={lastTime ? String(lastTime.reps) : String(targetSets)}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setReps, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Botón confirmar + descanso */}
@@ -823,7 +1028,7 @@ export default function FocusMode() {
             size="lg"
             className="h-16 rounded-2xl text-lg font-black glow-highlight"
             onClick={handleConfirmSet}
-            disabled={!reps}
+            disabled={currentEx?.type === 'cardio' ? !duration : !reps}
           >
             <Check className="mr-2 w-6 h-6" />
             {!currentPlan.isLastInRound ? 'Siguiente (Superset)' : 'Confirmar — Descanso'}
@@ -964,10 +1169,78 @@ export default function FocusMode() {
             fullWidth
             size="lg"
             className="h-16 rounded-2xl font-black text-xl glow-highlight transition-all hover:scale-[1.02] active:scale-[0.98]"
+            onClick={() => setPhase('rpe_feedback')}
+            disabled={saving}
+          >
+            Continuar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: RPE / SENSACIONES (FEEDBACK FINAL)
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'rpe_feedback') {
+    const feedback = (() => {
+      if (globalRpe <= 4) return { title: 'Recuperación Activa', desc: 'Esfuerzo muy suave. Si buscabas hipertrofia, necesitas aumentar el peso o llegar más cerca del fallo.' };
+      if (globalRpe <= 6) return { title: 'Moderado', desc: 'Buen estímulo, pero con mucho margen. Si haces muchas reps y no sientes fatiga, ajusta tu técnica o peso.' };
+      if (globalRpe <= 8) return { title: 'Punto Óptimo', desc: '¡Excelente! Encontraste el punto dulce para crecer. Buen trabajo muscular sin destrozar tus articulaciones.' };
+      if (globalRpe === 9) return { title: 'Muy Exigente', desc: 'Llegaste al fallo real o muy cerca. Perfecto para series clave, pero requerirá buena recuperación.' };
+      return { title: 'Fallo Absoluto', desc: 'Esfuerzo extremo y peligroso si se abusa. Recuerda: si te duele la articulación y no el músculo, bájale al ego.' };
+    })();
+
+    return (
+      <div className="min-h-dvh flex flex-col px-6 py-8 relative bg-bg overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <GlobalHeader title="Paso Final" subtitle="Sensaciones de la Sesión" />
+        
+        <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-black text-text mb-3">¿Cómo sentiste el entrenamiento?</h2>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Más allá de sudar, lo importante es encontrar las señales correctas de tu cuerpo.
+            </p>
+          </div>
+
+          <div className="bg-surface border border-border rounded-3xl p-6 mb-8 relative">
+            <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center border border-primary/30">
+              <Activity className="w-5 h-5 text-primary" />
+            </div>
+
+            <div className="text-center mt-4 mb-8">
+              <span className="text-[5rem] font-black text-text leading-none tracking-tighter">
+                {globalRpe}
+              </span>
+              <span className="text-xl text-text-muted font-bold ml-1">/ 10</span>
+            </div>
+
+            <input 
+              type="range" 
+              min="1" 
+              max="10" 
+              value={globalRpe}
+              onChange={(e) => setGlobalRpe(Number(e.target.value))}
+              className="w-full accent-primary h-2 bg-surface-alt rounded-lg appearance-none cursor-pointer mb-6"
+            />
+
+            <div className="bg-bg rounded-xl p-4 border border-border/50 transition-all duration-300">
+              <h3 className="text-base font-black text-highlight mb-1">{feedback.title}</h3>
+              <p className="text-xs text-text-muted leading-relaxed">{feedback.desc}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full pt-4 pb-4">
+          <Button
+            variant="primary"
+            fullWidth
+            size="lg"
+            className="h-16 rounded-2xl font-black text-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
             onClick={handleFinish}
             disabled={saving}
           >
-            {saving ? 'Guardando Entrenamiento...' : 'Finalizar y Guardar'}
+            {saving ? 'Guardando Sesión...' : 'Finalizar Sesión'}
           </Button>
         </div>
       </div>

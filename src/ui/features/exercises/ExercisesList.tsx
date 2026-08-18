@@ -11,9 +11,7 @@ import { ExerciseModal } from './components/ExerciseModal';
 export default function ExercisesList() {
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'Pecho': true // Expandir el primero por defecto
-  });
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const [editingEx, setEditingEx] = useState<Exercise | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -86,14 +84,16 @@ export default function ExercisesList() {
           </Link>
           <h1 className="text-2xl font-black text-text tracking-wide">Ejercicios</h1>
         </div>
-        <Button 
-          variant="highlight" 
-          size="sm" 
-          className="rounded-xl font-bold px-4 h-10 glow-highlight"
-          onClick={() => setIsCreateModalOpen(true)}
-        >
-          <Plus className="w-5 h-5 mr-1" /> Nuevo
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="highlight" 
+            size="sm" 
+            className="rounded-xl font-bold px-4 h-10 glow-highlight"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            <Plus className="w-5 h-5 mr-1" /> Nuevo
+          </Button>
+        </div>
       </header>
 
       <div className="px-4 pb-6 flex-1 flex flex-col">

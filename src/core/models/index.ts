@@ -23,12 +23,15 @@ export interface Exercise {
   equipment: string;
   owner_id: string | null;
   is_global: boolean;
+  type?: 'strength' | 'cardio';
 }
 
 export interface RoutineExercise {
   exercise_id: string;
   target_sets: number;
   target_reps: number;
+  target_duration?: number; // Para cardio: minutos
+  target_distance?: number; // Para cardio: km
   rest_seconds?: number; // Mantenido por compatibilidad con rutinas antiguas
   superset_id?: string; // Para agrupar ejercicios en Supersets / Circuitos
 }
@@ -46,8 +49,10 @@ export interface Routine {
 
 export interface WorkoutSet {
   exercise_id: string;
-  weight: number;
-  reps: number;
+  weight?: number;
+  reps?: number;
+  duration?: number; // min
+  distance?: number; // km
   set_type: 'normal' | 'warmup' | 'drop';
 }
 
@@ -61,6 +66,7 @@ export interface WorkoutSession {
   sets: WorkoutSet[];
   exercise_ids: string[];
   skipped_exercise_ids?: string[]; // IDs de ejercicios omitidos (para reanudar luego)
+  global_rpe?: number; // Sensación global de la sesión (1-10)
 }
 
 export interface BodyMetric {

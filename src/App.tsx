@@ -8,6 +8,8 @@ import Dashboard from '@ui/features/dashboard/Dashboard';
 import ExercisesList from '@ui/features/exercises/ExercisesList';
 import RoutineBuilder from '@ui/features/routines/RoutineBuilder';
 import RoutinesHome from '@ui/features/routines/RoutinesHome';
+import Academy from '@ui/features/academy/Academy';
+import AcademyCategoryView from '@ui/features/academy/AcademyCategory';
 import FocusMode from '@ui/features/workout/FocusMode';
 import Profile from '@ui/features/profile/Profile';
 import ProgressHub from '@ui/features/progress/ProgressHub';
@@ -121,6 +123,12 @@ export default function App() {
             } />
             <Route path="/progress" element={
               <ProtectedRoute><ProgressHub /></ProtectedRoute>
+            } />
+            <Route path="/academy" element={
+              <ProtectedRoute><Academy /></ProtectedRoute>
+            } />
+            <Route path="/academy/:categoryId" element={
+              <ProtectedRoute><AcademyCategoryView /></ProtectedRoute>
             } />
           </Routes>
         </AppShell>

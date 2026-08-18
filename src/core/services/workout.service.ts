@@ -1,8 +1,10 @@
 import { collection, doc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, getDoc, writeBatch, increment, limit, startAfter, QueryConstraint } from 'firebase/firestore';
 
 export interface LastTimeStats {
-  weight: number;
-  reps: number;
+  weight?: number;
+  reps?: number;
+  duration?: number;
+  distance?: number;
   totalSets: number;
 }
 
@@ -21,8 +23,14 @@ export async function getLastExerciseStats(uid: string, exerciseId: string): Pro
   const matching = (session.sets || []).filter(s => s.exercise_id === exerciseId);
   
   if (matching.length > 0) {
-    const bestSet = matching.reduce((prev, curr) => (curr.weight > prev.weight ? curr : prev));
-    return { weight: bestSet.weight, reps: bestSet.reps, totalSets: matching.length };
+    const bestSet = matching.reduce((prev, curr) => ((curr.weight || 0) > (prev.weight || 0) ? curr : prev));
+    return { 
+      weight: bestSet.weight, 
+      reps: bestSet.reps, 
+      duration: bestSet.duration,
+      distance: bestSet.distance,
+      totalSets: matching.length 
+    };
   }
   return null;
 }

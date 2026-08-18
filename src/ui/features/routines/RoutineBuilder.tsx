@@ -24,9 +24,7 @@ export default function RoutineBuilder() {
   const [loadingInitial, setLoadingInitial] = useState(isEditing);
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'Pecho': true
-  });
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   
   // Estados para nuevo ejercicio inline
@@ -98,10 +96,13 @@ export default function RoutineBuilder() {
   };
 
   const addExercise = (exerciseId: string) => {
-    setRoutineExercises(prev => [...prev, {
-      exercise_id: exerciseId,
-      target_sets: 3,
-      target_reps: 10
+    const exercise = allExercises.find(e => e.id === exerciseId);
+    const isCardio = exercise?.type === 'cardio';
+    setRoutineExercises([...routineExercises, { 
+      exercise_id: exerciseId, 
+      target_sets: 1, 
+      target_reps: isCardio ? 0 : 10,
+      target_duration: isCardio ? 15 : undefined 
     }]);
   };
 
@@ -405,28 +406,43 @@ export default function RoutineBuilder() {
                           <h3 className="font-bold text-lg text-text leading-tight">{ex?.name || 'Cargando...'}</h3>
                         </div>
                       
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
-                          <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Series</label>
-                          <input 
-                            type="number" 
-                            value={re.target_sets}
-                            onChange={e => updateExercise(i, 'target_sets', Number(e.target.value))}
-                            className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
-                            min={1}
-                          />
+                      {ex?.type === 'cardio' ? (
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
+                            <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Minutos</label>
+                            <input 
+                              type="number" 
+                              value={re.target_duration || 15}
+                              onChange={e => updateExercise(i, 'target_duration', Number(e.target.value))}
+                              className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
+                              min={1}
+                            />
+                          </div>
                         </div>
-                        <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
-                          <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Reps</label>
-                          <input 
-                            type="number" 
-                            value={re.target_reps}
-                            onChange={e => updateExercise(i, 'target_reps', Number(e.target.value))}
-                            className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
-                            min={1}
-                          />
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
+                            <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Series</label>
+                            <input 
+                              type="number" 
+                              value={re.target_sets}
+                              onChange={e => updateExercise(i, 'target_sets', Number(e.target.value))}
+                              className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
+                              min={1}
+                            />
+                          </div>
+                          <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
+                            <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Reps</label>
+                            <input 
+                              type="number" 
+                              value={re.target_reps}
+                              onChange={e => updateExercise(i, 'target_reps', Number(e.target.value))}
+                              className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
+                              min={1}
+                            />
+                          </div>
                         </div>
-                      </div>
+                      )}
                       </div>
                     </div>
                   );
