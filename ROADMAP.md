@@ -45,12 +45,17 @@ Objetivo: retención vía recompensas visuales y comodidad.
 
 - [x] Métricas corporales: peso corporal, medidas, fotos de progreso (Firebase Storage)
 - [ ] Etiquetas de serie en la UI: Calentamiento, Drop-set, Al fallo _(Nota: la base de datos ya soporta `normal`, `warmup` y `drop`)_
-- [ ] RPE (esfuerzo percibido) por serie
-- [ ] Sustitución rápida de ejercicio en vivo, sin dañar la plantilla de la rutina
+- [x] RPE (esfuerzo percibido)
+- [x] Sustitución rápida de ejercicio en vivo, sin dañar la plantilla de la rutina
 - [ ] Animación (confeti/alerta) al superar un Récord Personal histórico
-- [ ] Supersets / circuitos — ejercicios agrupados sin descanso entre ellos
-- [ ] Calculadora de discos — qué platos cargar para llegar al peso objetivo
+- [x] Supersets / circuitos — ejercicios agrupados sin descanso entre ellos
+- [x] Calculadora de discos — qué platos cargar para llegar al peso objetivo
 - [ ] Exportar historial a CSV/JSON — dueño de sus propios datos, barato de implementar
+
+### Extras integrados fuera de plan
+
+- [x] **Módulo de Academia:** Biblioteca educativa con tips, músculos involucrados, precauciones y videos de ejecución.
+- [x] **Integración de Cardio:** Soporte nativo para ejercicios cardiovasculares (Tiempo/Distancia), rutinas híbridas y UI/progresión adaptativa.
 
 ## Fase 3 — Comunidad y escalabilidad
 
@@ -59,7 +64,7 @@ Objetivo: crecimiento orgánico y monetización.
 - [ ] Catálogo global de ejercicios ampliado con imágenes/GIFs
 - [ ] Rutinas públicas, clonables, con paginación por cursor (`startAfter`) — nunca `offset`
 - [ ] Roles de usuario (bases para free/premium)
-- [ ] Notificaciones push (Firebase Cloud Messaging — no requiere plan Blaze)
+- [x] Notificaciones push (Firebase Cloud Messaging — no requiere plan Blaze)
 - [ ] `firestore.indexes.json` revisado por cada query compuesta nueva
 - [ ] Mover consolidación de `user_stats` a una Cloud Function (requiere plan Blaze) — cuando el volumen de base de datos lo justifique
 

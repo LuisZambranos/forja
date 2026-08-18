@@ -10,6 +10,7 @@ import { WorkoutCTA } from './components/WorkoutCTA';
 import { RecentHistory } from './components/RecentHistory';
 import { BookOpen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { NotificationBanner } from './components/NotificationBanner';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -64,6 +65,9 @@ export default function Dashboard() {
       <div className="h-px bg-linear-to-r from-transparent via-primary/40 to-transparent mx-4 mb-6" />
 
       <div className="flex-1 px-4 pb-24 flex flex-col gap-5">
+
+        {/* ── Banner de Notificaciones ── */}
+        <NotificationBanner />
 
         {/* ── Racha ── */}
         <StreakCard 
