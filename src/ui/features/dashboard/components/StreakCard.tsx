@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { AlertCircle } from 'lucide-react';
 import { calculateStreakStatus } from '@ui/features/dashboard/utils/streakUtils';
 
 interface StreakCardProps {
@@ -74,13 +75,24 @@ export function StreakCard({ currentStreak, lastWorkoutDate }: StreakCardProps) 
             {streak.subMessage}
           </p>
 
-          {/* Badge "Hoy asegurado" */}
-          {streak.trainedToday && (
-            <div className="flex items-center gap-1 mt-2 bg-green-500/15 border border-green-500/30 text-green-400 text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full w-fit">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              Hoy asegurado
-            </div>
-          )}
+          {/* Badge "Estado de Hoy" */}
+          <div className="mt-2">
+            {streak.trainedToday ? (
+              <div className="flex items-center gap-1 bg-success/15 border border-success/30 text-success text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full w-fit">
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                Hoy asegurado
+              </div>
+            ) : hasSomeStreak ? (
+              <div className="flex items-center gap-1 bg-[#ffaa40]/15 border border-[#ffaa40]/30 text-[#ffaa40] text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full w-fit animate-pulse">
+                <AlertCircle className="w-3 h-3" />
+                Pendiente hoy
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 bg-surface-alt border border-border text-text-muted text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-full w-fit">
+                ¡Empieza hoy!
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Emoji / ícono de nivel */}

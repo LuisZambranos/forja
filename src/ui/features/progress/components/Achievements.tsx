@@ -1,11 +1,14 @@
+import { useState } from 'react';
 import { useAuth } from '@ui/hooks/useAuth';
 import { useAchievements } from '../hooks/useAchievements';
 import { Info, CheckCircle2, AlertCircle, Dumbbell } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+import { Modal } from '@ui/components/ui/Modal';
 
 export function Achievements() {
   const { user } = useAuth();
   const { consistencyStats, isLoading } = useAchievements(user?.uid);
+  const [selectedWeek, setSelectedWeek] = useState<typeof consistencyStats.weeksBreakdown[0] | null>(null);
 
   if (isLoading || !user) {
     return (
@@ -51,7 +54,8 @@ export function Achievements() {
     return { title: 'Iniciado', percent: 5 }; // < 1 semana
   };
 
-  const rankInfo = getRankInfo(user.max_streak || 0);
+  const effectiveMaxStreak = Math.max(user.max_streak || 0, user.current_streak || 0);
+  const rankInfo = getRankInfo(effectiveMaxStreak);
 
   // Helper for mini-calendar (Last 7 days)
   const last7Days = Array.from({ length: 7 }).map((_, i) => {
@@ -134,7 +138,11 @@ export function Achievements() {
           <span className="text-[10px] uppercase font-bold text-text-muted text-center tracking-widest mb-2">Detalle Semanal</span>
           {weeksBreakdown && weeksBreakdown.length > 0 ? (
             weeksBreakdown.map((week, idx) => (
-              <div key={idx} className="flex justify-between items-center text-sm">
+              <button 
+                key={idx} 
+                onClick={() => setSelectedWeek(week)}
+                className="flex justify-between items-center text-sm p-2 -mx-2 rounded-xl hover:bg-surface-alt/50 active:scale-[0.98] transition-all cursor-pointer"
+              >
                 <span className="text-text font-medium">{week.label}</span>
                 <div className="flex items-center gap-2">
                   <span className="text-text-muted">{week.actual}/{week.expected} días</span>
@@ -144,7 +152,7 @@ export function Achievements() {
                     <AlertCircle className="w-4 h-4 text-[#ffaa40]" />
                   )}
                 </div>
-              </div>
+              </button>
             ))
           ) : (
             <span className="text-sm text-text-muted text-center py-2">Registra tu primer entreno del mes.</span>
@@ -265,7 +273,7 @@ export function Achievements() {
             
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-5xl font-black text-text">{user.max_streak || 0}</span>
+                <span className="text-5xl font-black text-text">{effectiveMaxStreak}</span>
                 <span className="text-4xl drop-shadow-[0_0_15px_rgba(139,92,246,0.5)] transform hover:scale-110 transition-transform cursor-default">🏆</span>
               </div>
               
@@ -279,8 +287,7 @@ export function Achievements() {
               </div>
             </div>
 
-            {/* Comparativa Competitiva */}
-            {(user.max_streak || 0) > 0 && (
+            {effectiveMaxStreak > 0 && (
               <div className="mt-4 p-3 bg-linear-to-r from-primary/5 to-transparent rounded-2xl border-l-2 border-primary">
                 <p className="text-xs font-bold text-text">
                   ¡Superas al <span className="text-primary text-sm">{rankInfo.percent}%</span> de la comunidad!
@@ -317,6 +324,80 @@ export function Achievements() {
           </div>
         </div>
       </div>
+
+      {/* Modal Detalles Semanales */}
+      <Modal 
+        isOpen={!!selectedWeek} 
+        onClose={() => setSelectedWeek(null)}
+        title={selectedWeek ? `Detalles ${selectedWeek.label}` : ''}
+      >
+        {selectedWeek && (
+          <div className="flex flex-col gap-4">
+            <div className="flex justify-between items-center px-2">
+              <span className="text-sm text-text-muted">Cumplimiento</span>
+              <span className="text-sm font-bold text-text">{selectedWeek.actual}/{selectedWeek.expected} días</span>
+            </div>
+            
+            <div className="grid grid-cols-7 gap-2 bg-surface-alt/30 p-4 rounded-2xl border border-border">
+              {selectedWeek.days.map((day, i) => {
+                let badgeClass = 'bg-surface border border-border text-transparent'; // none
+                let mark = null;
+                
+                if (day.status === 'completed') {
+                  badgeClass = 'bg-success/20 text-success border border-success/40 shadow-[0_0_8px_rgba(74,222,128,0.3)]';
+                  mark = '✓';
+                } else if (day.status === 'recovered') {
+                  badgeClass = 'bg-info/20 text-info border border-info/40 shadow-[0_0_8px_rgba(56,189,248,0.3)]'; // Blue (info)
+                  mark = '↺';
+                } else if (day.status === 'missed') {
+                  badgeClass = 'bg-danger/20 text-danger border border-danger/40';
+                  mark = '✗';
+                } else if (day.status === 'pending_today') {
+                  badgeClass = 'bg-[#ffaa40]/20 text-[#ffaa40] border border-[#ffaa40]/40 shadow-[0_0_8px_rgba(255,170,64,0.3)] animate-pulse';
+                  mark = '·';
+                } else if (day.status === 'scheduled_future') {
+                  badgeClass = 'bg-surface-alt/50 text-text-muted border border-border border-dashed';
+                  mark = '·';
+                } else if (day.status === 'none') {
+                  badgeClass = 'bg-surface border border-border text-transparent';
+                }
+
+                return (
+                  <div key={i} className="flex flex-col items-center gap-2">
+                    <span className="text-[10px] font-bold text-text-muted">{day.label}</span>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm transition-all ${badgeClass}`}>
+                      {mark && <span className="drop-shadow-md">{mark}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            
+            <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 mt-2">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3.5 h-3.5 rounded-full bg-success/20 border border-success/40 flex items-center justify-center text-[8px] text-success font-bold">✓</div>
+                <span className="text-[10px] text-text-muted">Cumplidos</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3.5 h-3.5 rounded-full bg-info/20 border border-info/40 flex items-center justify-center text-[8px] text-info font-bold">↺</div>
+                <span className="text-[10px] text-text-muted">Recuperados</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3.5 h-3.5 rounded-full bg-danger/20 border border-danger/40 flex items-center justify-center text-[8px] text-danger font-bold">✗</div>
+                <span className="text-[10px] text-text-muted">Fallados</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3.5 h-3.5 rounded-full bg-[#ffaa40]/20 border border-[#ffaa40]/40 flex items-center justify-center text-[10px] text-[#ffaa40] font-bold leading-none shadow-[0_0_8px_rgba(255,170,64,0.3)] animate-pulse">·</div>
+                <span className="text-[10px] text-text-muted">Pendiente (Hoy)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3.5 h-3.5 rounded-full bg-surface-alt/50 border border-border border-dashed flex items-center justify-center text-[10px] text-text-muted font-bold leading-none">·</div>
+                <span className="text-[10px] text-text-muted">Programados</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
     </div>
   );

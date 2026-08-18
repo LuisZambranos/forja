@@ -5,12 +5,13 @@ export interface StreakCelebrationProps {
   isSameDay: boolean;
   isRestored: boolean;
   newStreak: number;
+  isDoubleSession?: boolean;
   onClose: () => void;
 }
 
-export function StreakCelebration({ isSameDay, isRestored, newStreak, onClose }: StreakCelebrationProps) {
+export function StreakCelebration({ isSameDay, isRestored, newStreak, isDoubleSession, onClose }: StreakCelebrationProps) {
   
-  if (isSameDay) {
+  if (isSameDay || isDoubleSession) {
     // EXTRA SESSION
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/95 backdrop-blur-md">

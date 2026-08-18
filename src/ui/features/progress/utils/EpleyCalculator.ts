@@ -21,14 +21,15 @@ export interface PRRecord {
  * Encuentra el mejor set (basado en el 1RM estimado más alto) de una lista de sets.
  */
 export function getBestSet(sets: WorkoutSet[]): { weight: number, reps: number, estimated1RM: number } | null {
-  if (!sets || sets.length === 0) return null;
+  const validSets = sets.filter(s => s.weight !== undefined && s.reps !== undefined);
+  if (!validSets || validSets.length === 0) return null;
 
-  let bestSet = sets[0];
-  let max1RM = calculate1RMEpley(bestSet.weight, bestSet.reps);
+  let bestSet = validSets[0];
+  let max1RM = calculate1RMEpley(bestSet.weight!, bestSet.reps!);
 
-  for (let i = 1; i < sets.length; i++) {
-    const set = sets[i];
-    const current1RM = calculate1RMEpley(set.weight, set.reps);
+  for (let i = 1; i < validSets.length; i++) {
+    const set = validSets[i];
+    const current1RM = calculate1RMEpley(set.weight!, set.reps!);
     if (current1RM > max1RM) {
       max1RM = current1RM;
       bestSet = set;
@@ -36,8 +37,8 @@ export function getBestSet(sets: WorkoutSet[]): { weight: number, reps: number, 
   }
 
   return {
-    weight: bestSet.weight,
-    reps: bestSet.reps,
+    weight: bestSet.weight!,
+    reps: bestSet.reps!,
     estimated1RM: max1RM,
   };
 }

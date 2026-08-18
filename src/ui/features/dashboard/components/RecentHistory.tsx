@@ -1,4 +1,5 @@
-import { Clock, RefreshCw } from 'lucide-react';
+import { Clock, RefreshCw, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '@ui/components/ui/Card';
 import type { WorkoutSession } from '@core/models';
 
@@ -21,6 +22,8 @@ function formatRelativeDate(ts: number): string {
 }
 
 export function RecentHistory({ loadingSessions, recentSessions, error, refetch }: RecentHistoryProps) {
+  const navigate = useNavigate();
+
   return (
     <section>
       <div className="flex items-center gap-2 mb-3">
@@ -57,14 +60,21 @@ export function RecentHistory({ loadingSessions, recentSessions, error, refetch 
             const mins = Math.floor(s.duration_seconds / 60);
             const setsCount = s.sets?.length || 0;
             return (
-              <Card key={s.id} className="flex items-center justify-between py-3">
+              <Card 
+                key={s.id} 
+                className="flex items-center justify-between py-3 cursor-pointer hover:bg-surface-alt/50 transition-colors group"
+                onClick={() => navigate('/progress', { state: { tab: 'history', openSessionId: s.id } })}
+              >
                 <div>
                   <p className="text-sm font-semibold text-text">{formatRelativeDate(s.finished_at)}</p>
                   <p className="text-xs text-text-muted mt-0.5">{setsCount} series completadas</p>
                 </div>
-                <div className="flex items-center gap-1 text-text-muted">
-                  <Clock className="w-4 h-4" />
-                  <span className="text-sm font-medium">{mins} min</span>
+                <div className="flex items-center gap-3 text-text-muted">
+                  <div className="flex items-center gap-1">
+                    <Clock className="w-4 h-4" />
+                    <span className="text-sm font-medium">{mins} min</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-border group-hover:text-primary transition-colors" />
                 </div>
               </Card>
             );

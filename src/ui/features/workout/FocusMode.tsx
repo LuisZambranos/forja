@@ -1,26 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@ui/hooks/useAuth';
 import { useWorkoutStore } from '../../../store/workoutStore';
-import type { Routine, WorkoutSet } from '@core/models';
+import type { Routine, WorkoutSet, WorkoutSession } from '@core/models';
 import { Button } from '@ui/components/ui/Button';
 import { Modal } from '@ui/components/ui/Modal';
-import { Play, Timer, ChevronRight, Check, X } from 'lucide-react';
+import { Play, Timer, ChevronRight, Check, X, Activity, RefreshCw } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine } from '@ui/hooks/useRoutines';
-import { useSaveWorkoutSession } from '@ui/hooks/useWorkout';
-import { getLastExerciseStats } from '@core/services/workout.service';
+import { getIncompleteSessionToday, getLastExerciseStats } from '@core/services/workout.service';
+import { useSaveWorkoutSession, useUpdateWorkoutSession } from '@ui/hooks/useWorkout';
 import { StreakCelebration } from './components/StreakCelebration';
+import { LiveSubstituteModal } from './components/LiveSubstituteModal';
+import { ExerciseModal } from '@ui/features/exercises/components/ExerciseModal';
+import { WarmupSuggestionCard } from './components/WarmupSuggestionCard';
+import { PlateCalculator } from './components/PlateCalculator';
 
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
 // ──────────────────────────────────────────────
-type Phase = 'intro' | 'active' | 'resting' | 'completed' | 'streak_celebration';
+type Phase = 'resume_prompt' | 'intro' | 'active' | 'resting' | 'completed' | 'rpe_feedback' | 'streak_celebration';
 
 interface LastTimeStats {
-  weight: number;
-  reps: number;
+  weight?: number;
+  reps?: number;
+  duration?: number;
+  distance?: number;
   totalSets: number;
+}
+
+interface PlanItem {
+  routineExIndex: number;
+  setNumber: number;
+  isLastInRound: boolean;
 }
 
 // ──────────────────────────────────────────────
@@ -45,11 +57,17 @@ export default function FocusMode() {
   // Estado de la máquina
   const [phase, setPhase] = useState<Phase>('intro');
   const [routine, setRoutine] = useState<Routine | null>(null);
-  const [exIndex, setExIndex] = useState(0);         // índice del ejercicio actual
-  const [setIndex, setSetIndex] = useState(0);       // serie actual (0-based)
+  const [existingSession, setExistingSession] = useState<WorkoutSession | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [isResumed, setIsResumed] = useState(false);
+  const [planIndex, setPlanIndex] = useState(0);
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
+  const [duration, setDuration] = useState('');
+  const [distance, setDistance] = useState('');
+  const [setType] = useState<'normal'|'warmup'|'drop'>('normal');
   const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
+  const [skippedExercises, setSkippedExercises] = useState<string[]>([]);
   const [lastTime, setLastTime] = useState<LastTimeStats | null>(null);
   const [loadingLast, setLoadingLast] = useState(false);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
@@ -61,6 +79,13 @@ export default function FocusMode() {
   // Estados para Modal de Confirmación de Salida
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [exitConfirmUnlocked, setExitConfirmUnlocked] = useState(false);
+
+  // Substitute state
+  const [showSubstituteModal, setShowSubstituteModal] = useState(false);
+  const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
+
+  // RPE state
+  const [globalRpe, setGlobalRpe] = useState(5);
 
   // Prevenir volver atrás por error (swipe back o botón atrás)
   useEffect(() => {
@@ -90,16 +115,62 @@ export default function FocusMode() {
   const [progressCount, setProgressCount] = useState(0);
   const [progressExercises] = useState(new Set<string>());
 
-  // Cargar rutina
+  // Cargar rutina y chequear sesiones incompletas
   const { data: routineData, isLoading: isLoadingRoutine } = useRoutine(routineId);
+
   useEffect(() => {
-    if (routineData) {
-      setRoutine(routineData);
-    } else if (!isLoadingRoutine && !routine) {
+    if (routineData && user) {
+      getIncompleteSessionToday(user.uid, routineData.id).then(session => {
+        if (session) {
+          setExistingSession(session);
+          setRoutine(routineData);
+          setPhase('resume_prompt');
+        } else {
+          setRoutine(routineData);
+          setPhase('intro');
+        }
+        setCheckingSession(false);
+      });
+    } else if (!isLoadingRoutine && !routineData) {
       alert('Rutina no encontrada');
       navigate('/');
     }
-  }, [routineData, isLoadingRoutine, navigate, routine]);
+  }, [routineData, isLoadingRoutine, navigate, user]);
+
+  const handleResumeWorkout = (mode: 'all' | 'strength' | 'cardio' | 'new') => {
+    if (mode !== 'new' && existingSession && existingSession.skipped_exercise_ids) {
+      const skippedSet = new Set(existingSession.skipped_exercise_ids);
+      let remainingExercises = routine!.exercises.filter(ex => skippedSet.has(ex.exercise_id));
+      
+      if (mode === 'cardio') {
+         remainingExercises = remainingExercises.filter(ex => {
+            const exerciseDef = allExercises.find(e => e.id === ex.exercise_id);
+            return exerciseDef?.muscle_group.toLowerCase() === 'cardio';
+         });
+      } else if (mode === 'strength') {
+         remainingExercises = remainingExercises.filter(ex => {
+            const exerciseDef = allExercises.find(e => e.id === ex.exercise_id);
+            return exerciseDef?.muscle_group.toLowerCase() !== 'cardio';
+         });
+      }
+
+      if (remainingExercises.length === 0) {
+        alert('No hay ejercicios de este tipo para retomar.');
+        return;
+      }
+
+      const modifiedRoutine: Routine = {
+        ...routine!,
+        exercises: remainingExercises
+      };
+      
+      setRoutine(modifiedRoutine);
+      setIsResumed(true);
+    } else {
+      setExistingSession(null);
+    }
+    setPhase('intro');
+  };
 
   // Caché de ejercicios
   const { data: myExercises = [] } = useMyExercises(user?.uid);
@@ -108,6 +179,7 @@ export default function FocusMode() {
 
   // Hook mutation
   const { mutateAsync: saveWorkout } = useSaveWorkoutSession();
+  const { mutateAsync: updateWorkout } = useUpdateWorkoutSession();
 
   // Wake lock
   useEffect(() => {
@@ -120,25 +192,83 @@ export default function FocusMode() {
     return () => { wl?.release(); };
   }, []);
 
+  const plan = useMemo<PlanItem[]>(() => {
+    if (!routine) return [];
+    const p: PlanItem[] = [];
+    let i = 0;
+    while (i < routine.exercises.length) {
+      const current = routine.exercises[i];
+      if (current.superset_id) {
+        const supersetIndices = [i];
+        let j = i + 1;
+        while (j < routine.exercises.length && routine.exercises[j].superset_id === current.superset_id) {
+          supersetIndices.push(j);
+          j++;
+        }
+        const maxSets = Math.max(...supersetIndices.map(idx => routine.exercises[idx].target_sets || 3));
+        for (let s = 0; s < maxSets; s++) {
+          const setsInRound: PlanItem[] = [];
+          for (let k = 0; k < supersetIndices.length; k++) {
+            const exIdx = supersetIndices[k];
+            const targetSets = routine.exercises[exIdx].target_sets || 3;
+            if (s < targetSets) {
+              const item = { routineExIndex: exIdx, setNumber: s, isLastInRound: false };
+              p.push(item);
+              setsInRound.push(item);
+            }
+          }
+          if (setsInRound.length > 0) {
+            setsInRound[setsInRound.length - 1].isLastInRound = true;
+          }
+        }
+        i = j;
+      } else {
+        const targetSets = current.target_sets || 3;
+        for (let s = 0; s < targetSets; s++) {
+          p.push({ routineExIndex: i, setNumber: s, isLastInRound: true });
+        }
+        i++;
+      }
+    }
+    return p;
+  }, [routine]);
+
   // Cargar "última vez" cuando cambia el ejercicio
   useEffect(() => {
-    if (!routine || !user) return;
-    const ex = routine.exercises[exIndex];
-    if (!ex) return;
+    if (!routine || plan.length === 0) return;
+    const currentPlan = plan[planIndex];
+    if (!currentPlan) return;
+    const ex = routine.exercises[currentPlan.routineExIndex];
+    if (ex) {
+      if (ex.target_reps && !reps) setReps(String(ex.target_reps));
+      if (ex.target_duration && !duration) setDuration(String(ex.target_duration));
+      if (ex.target_distance && !distance) setDistance(String(ex.target_distance));
+    }
+
     setLoadingLast(true);
-    getLastExerciseStats(user.uid, ex.exercise_id)
+    getLastExerciseStats(user!.uid, ex.exercise_id)
       .then(res => {
         setLastTime(res);
-        if (res) {
-          setWeight(String(res.weight));
-          setReps(String(res.reps));
+        const lastSetThisSession = completedSets.slice().reverse().find(s => s.exercise_id === ex.exercise_id);
+        if (!lastSetThisSession) {
+            if (res) {
+              setWeight(String(res.weight || ''));
+              setReps(String(res.reps || ''));
+              setDuration(String(res.duration || ''));
+              setDistance(String(res.distance || ''));
+            }
         } else {
-          setWeight('');
-          setReps(String(ex.target_reps));
+          setWeight(String(lastSetThisSession.weight || ''));
+          setReps(String(lastSetThisSession.reps || ''));
+          setDuration(String(lastSetThisSession.duration || ''));
+          setDistance(String(lastSetThisSession.distance || ''));
         }
       })
+      .catch(err => {
+        console.error('Error fetching last stat:', err);
+      })
       .finally(() => setLoadingLast(false));
-  }, [exIndex, routine, user]);
+  }, [planIndex, plan, routine, user, completedSets]);
 
   const adjustValue = (setter: React.Dispatch<React.SetStateAction<string>>, amount: number, min: number = 0) => {
     setter(prev => {
@@ -146,6 +276,18 @@ export default function FocusMode() {
       return Math.max(min, val + amount).toString();
     });
   };
+
+  const exercisesInSuperset = useMemo(() => {
+    if (!routine || plan.length === 0) return [];
+    const currentPlan = plan[planIndex] || plan[0];
+    if (!currentPlan) return [];
+    const currentRoutineEx = routine.exercises[currentPlan.routineExIndex];
+    if (!currentRoutineEx || !currentRoutineEx.superset_id) return [];
+    
+    return routine.exercises
+      .filter(ex => ex.superset_id === currentRoutineEx.superset_id)
+      .map(ex => allExercises.find(e => e.id === ex.exercise_id)?.name || 'Ejercicio');
+  }, [routine, plan, planIndex, allExercises]);
 
   // Timer de descanso basado en timestamp real
   useEffect(() => {
@@ -196,7 +338,7 @@ export default function FocusMode() {
     };
   }, [phase, restEndsAt, audioCtx]);
 
-  if (!routine) {
+  if (!routine || checkingSession) {
     return (
       <div className="min-h-dvh flex items-center justify-center">
         <span className="text-primary animate-pulse font-bold text-xl">Cargando...</span>
@@ -204,11 +346,14 @@ export default function FocusMode() {
     );
   }
 
+  const currentPlan = plan[planIndex] || plan[0] || { routineExIndex: 0, setNumber: 0, isLastInRound: true };
+  const exIndex = currentPlan.routineExIndex;
+  const setIndex = currentPlan.setNumber;
   const currentRoutineEx = routine.exercises[exIndex];
   const currentEx = allExercises.find(e => e.id === currentRoutineEx?.exercise_id);
   const targetSets = currentRoutineEx?.target_sets ?? 3;
-  const isLastExercise = exIndex === routine.exercises.length - 1;
-  const isLastSet = setIndex >= targetSets - 1;
+  const isSuperset = !!currentRoutineEx?.superset_id;
+  const setsDoneForThisEx = completedSets.filter(s => s.exercise_id === currentRoutineEx?.exercise_id).length;
 
   // ── Helpers Globales ──
   const totalRoutineSets = routine.exercises.reduce((acc, ex) => acc + (ex.target_sets ?? 3), 0) || 1;
@@ -295,66 +440,163 @@ export default function FocusMode() {
     }
   };
 
+  // ── Siguiente serie (lógica core) ──
+  const goToNextValidPlan = (fromIndex: number, currentSkipped: string[]) => {
+    let next = fromIndex + 1;
+    while (next < plan.length) {
+      const exId = routine!.exercises[plan[next].routineExIndex].exercise_id;
+      if (!currentSkipped.includes(exId)) break;
+      next++;
+    }
+    
+    if (next >= plan.length) {
+      setPhase('completed');
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 300]);
+    } else {
+      const nextPlan = plan[next];
+      const nextExId = routine!.exercises[nextPlan.routineExIndex].exercise_id;
+      const lastSetThisSession = completedSets.slice().reverse().find(s => s.exercise_id === nextExId);
+      if (lastSetThisSession) {
+        setWeight(String(lastSetThisSession.weight));
+        setReps(String(lastSetThisSession.reps));
+      }
+      
+      setPlanIndex(next);
+      if (plan[fromIndex] && plan[fromIndex].routineExIndex !== nextPlan.routineExIndex) {
+        setPhase('intro');
+      } else {
+        setPhase('active');
+      }
+    }
+  };
+
   // ── Confirmar serie ──
   const handleConfirmSet = () => {
     const w = parseFloat(weight) || 0;
     const r = parseInt(reps)    || 0;
-    if (r === 0) return; // al menos reps
+    const d = parseFloat(duration) || 0;
 
-    const newSet: WorkoutSet = {
+    if (currentEx?.type === 'cardio') {
+      if (d === 0) return;
+    } else {
+      if (r === 0) return;
+    }
+
+    const rawSet: WorkoutSet = {
       exercise_id: currentRoutineEx.exercise_id,
-      weight: w, reps: r, set_type: 'normal'
+      set_type: setType,
+      weight: weight ? parseFloat(weight) : undefined,
+      reps: reps ? parseInt(reps, 10) : undefined,
+      duration: duration ? parseFloat(duration) : undefined,
+      distance: distance ? parseFloat(distance) : undefined
     };
-    setCompletedSets(prev => [...prev, newSet]);
+    
+    // Eliminar campos undefined para evitar error de Firebase (Unsupported field value: undefined)
+    const newSet = Object.fromEntries(Object.entries(rawSet).filter(([_, v]) => v !== undefined)) as WorkoutSet;
 
-    // Calcular avance (Carga Progresiva)
+    const updatedCompletedSets = [...completedSets, newSet];
+    setCompletedSets(updatedCompletedSets);
+
     if (lastTime && !progressExercises.has(currentRoutineEx.exercise_id)) {
-      const isBetterWeight = w > lastTime.weight;
-      const isBetterReps = w === lastTime.weight && r > lastTime.reps;
-      const isBetterSets = w === lastTime.weight && r === lastTime.reps && (setIndex + 1) > lastTime.totalSets;
+      let isBetter = false;
       
-      if (isBetterWeight || isBetterReps || isBetterSets) {
+      if (currentEx?.type === 'cardio') {
+        const currentDur = parseFloat(duration) || 0;
+        const currentDist = parseFloat(distance) || 0;
+        const lastDur = lastTime.duration || 0;
+        const lastDist = lastTime.distance || 0;
+        
+        isBetter = currentDur > lastDur || (currentDur === lastDur && currentDist > lastDist);
+      } else {
+        const lastW = lastTime.weight || 0;
+        const lastR = lastTime.reps || 0;
+        
+        const isBetterWeight = w > lastW;
+        const isBetterReps = w === lastW && r > lastR;
+        const isBetterSets = w === lastW && r === lastR && (setIndex + 1) > lastTime.totalSets;
+        
+        isBetter = isBetterWeight || isBetterReps || isBetterSets;
+      }
+      
+      if (isBetter) {
         setProgressCount(prev => prev + 1);
         progressExercises.add(currentRoutineEx.exercise_id);
       }
     }
 
-    if (isLastSet && isLastExercise) {
+    let hasMore = false;
+    for (let i = planIndex + 1; i < plan.length; i++) {
+       const exId = routine!.exercises[plan[i].routineExIndex].exercise_id;
+       if (!skippedExercises.includes(exId)) {
+         hasMore = true;
+         break;
+       }
+    }
+
+    if (!hasMore) {
       setPhase('completed');
       if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 300]);
       return;
     }
 
-    // Iniciar descanso
-    let nextRest = 90;
-    if (isLastSet) {
-      nextRest = routine.rest_between_exercises ?? 180;
+    if (!currentPlan.isLastInRound) {
+       // Transición inmediata en Superset, sin descanso (o descanso muy corto)
+       goToNextValidPlan(planIndex, skippedExercises);
     } else {
-      nextRest = routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90;
+      let nextRest = 90;
+      let nextValidPlanIndex = planIndex + 1;
+      while (nextValidPlanIndex < plan.length) {
+         const exId = routine!.exercises[plan[nextValidPlanIndex].routineExIndex].exercise_id;
+         if (!skippedExercises.includes(exId)) break;
+         nextValidPlanIndex++;
+      }
+      
+      const nextPlanItem = plan[nextValidPlanIndex];
+      const nextRoutineEx = nextPlanItem ? routine!.exercises[nextPlanItem.routineExIndex] : null;
+
+      const isSameSuperset = currentRoutineEx.superset_id && nextRoutineEx && currentRoutineEx.superset_id === nextRoutineEx.superset_id;
+      const isSameExercise = nextRoutineEx && currentRoutineEx.exercise_id === nextRoutineEx.exercise_id;
+
+      if (!isSameExercise && !isSameSuperset) {
+         nextRest = routine.rest_between_exercises ?? 180;
+      } else {
+         nextRest = routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90;
+      }
+
+      setRestEndsAt(Date.now() + nextRest * 1000);
+      setRestDisplay(nextRest);
+      setPhase('resting');
     }
-    setRestEndsAt(Date.now() + nextRest * 1000);
-    setRestDisplay(nextRest);
-    setPhase('resting');
   };
 
   // ── Siguiente serie (desde modal de descanso) ──
   const handleNextSet = () => {
-    if (isLastSet) {
-      // Pasar al siguiente ejercicio
-      if (isLastExercise) {
-        handleFinish();
-        return;
+    goToNextValidPlan(planIndex, skippedExercises);
+  };
+
+  // ── Omitir Ejercicio ──
+  const handleSkipExercise = () => {
+    if (!currentRoutineEx) return;
+    const newSkipped = [...skippedExercises, currentRoutineEx.exercise_id];
+    setSkippedExercises(newSkipped);
+    goToNextValidPlan(planIndex, newSkipped);
+  };
+
+  // ── Sustituir Ejercicio ──
+  const handleSubstitute = (newExerciseId: string) => {
+    if (!routine || !currentRoutineEx) return;
+    const modifiedRoutine = { ...routine };
+    const currentRoutineExIndex = plan[planIndex].routineExIndex;
+    
+    modifiedRoutine.exercises = modifiedRoutine.exercises.map((ex, i) => {
+      if (i === currentRoutineExIndex) {
+        return { ...ex, exercise_id: newExerciseId };
       }
-      setExIndex(prev => prev + 1);
-      setSetIndex(0);
-      setWeight('');
-      setReps('');
-      setPhase('intro');
-    } else {
-      setSetIndex(prev => prev + 1);
-      // No limpiamos weight ni reps para que se mantengan de la serie anterior
-      setPhase('active');
-    }
+      return ex;
+    });
+
+    setRoutine(modifiedRoutine);
+    setShowSubstituteModal(false);
   };
 
   // ── Finalizar entrenamiento ──
@@ -364,21 +606,43 @@ export default function FocusMode() {
     try {
       const exerciseIds = Array.from(new Set(completedSets.map(s => s.exercise_id)));
       
-      const sessionData = {
-        owner_id: user.uid,
-        routine_id: routine.id,
-        started_at: startedAt,
-        finished_at: Date.now(),
-        duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
-        sets: completedSets,
-        exercise_ids: exerciseIds
-      };
+      if (existingSession && isResumed) {
+        // Combine with existing session
+        const combinedSets = [...(existingSession.sets || []), ...completedSets];
+        const combinedExerciseIds = Array.from(new Set([...(existingSession.exercise_ids || []), ...exerciseIds]));
+        const durationToAdd = Math.floor((Date.now() - startedAt) / 1000);
+        
+        const sessionData = {
+          owner_id: user.uid,
+          finished_at: Date.now(),
+          duration_seconds: (existingSession.duration_seconds || 0) + durationToAdd,
+          sets: combinedSets,
+          exercise_ids: combinedExerciseIds,
+          skipped_exercise_ids: skippedExercises,
+          global_rpe: globalRpe
+        };
 
-      // Guardado en segundo plano (fire-and-forget).
-      // Firestore lo guarda localmente de inmediato y sincroniza al recuperar red.
-      saveWorkout({ sessionData, sets: completedSets }).catch(err => {
-        console.error('Error sincronizando entrenamiento en background:', err);
-      });
+        updateWorkout({ id: existingSession.id, sessionData, sets: completedSets }).catch(err => {
+          console.error('Error sincronizando actualización en background:', err);
+        });
+      } else {
+        // Normal save
+        const sessionData = {
+          owner_id: user.uid,
+          routine_id: routine.id,
+          started_at: startedAt,
+          finished_at: Date.now(),
+          duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
+          sets: completedSets,
+          exercise_ids: exerciseIds,
+          skipped_exercise_ids: skippedExercises,
+          global_rpe: globalRpe
+        };
+
+        saveWorkout({ sessionData, sets: completedSets }).catch(err => {
+          console.error('Error sincronizando entrenamiento en background:', err);
+        });
+      }
       
       clearWorkout();
       setPhase('streak_celebration');
@@ -388,6 +652,59 @@ export default function FocusMode() {
       setSaving(false);
     }
   };
+
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: RESUME PROMPT (CARDIO FRACCIONADO)
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'resume_prompt') {
+    const skippedStrength = existingSession?.skipped_exercise_ids?.filter(id => {
+       return allExercises.find(e => e.id === id)?.muscle_group.toLowerCase() !== 'cardio';
+    }) || [];
+    
+    const skippedCardio = existingSession?.skipped_exercise_ids?.filter(id => {
+       return allExercises.find(e => e.id === id)?.muscle_group.toLowerCase() === 'cardio';
+    }) || [];
+
+    const totalSkipped = (existingSession?.skipped_exercise_ids || []).length;
+
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-bg px-4 py-8 max-w-lg mx-auto text-center animate-in fade-in zoom-in-95">
+        <div className="w-24 h-24 bg-highlight/10 rounded-full flex items-center justify-center mb-6">
+          <Activity className="w-12 h-12 text-highlight" />
+        </div>
+        <h2 className="text-3xl font-black text-text mb-4">¡Doble Sesión!</h2>
+        <p className="text-text-muted mb-8 px-4 leading-relaxed">
+          Tienes una sesión inconclusa de hoy. Omitiste <strong className="text-text">{totalSkipped}</strong> ejercicios. ¿Qué deseas hacer?
+        </p>
+        
+        <div className="flex flex-col gap-3 w-full">
+          {skippedStrength.length > 0 && skippedCardio.length > 0 ? (
+            <>
+              <Button variant="highlight" fullWidth size="lg" className="h-14 font-black glow-highlight" onClick={() => handleResumeWorkout('all')}>
+                Retomar Ambos (Fuerza y Cardio)
+              </Button>
+              <Button variant="secondary" fullWidth size="lg" className="h-14 font-black text-text" onClick={() => handleResumeWorkout('strength')}>
+                Solo retomar Fuerza
+              </Button>
+              <Button variant="secondary" fullWidth size="lg" className="h-14 font-black text-text" onClick={() => handleResumeWorkout('cardio')}>
+                Solo hacer el Cardio omitido
+              </Button>
+            </>
+          ) : (
+            <Button variant="highlight" fullWidth size="lg" className="h-16 text-lg font-black glow-highlight" onClick={() => handleResumeWorkout('all')}>
+              Retomar ejercicios omitidos
+            </Button>
+          )}
+
+          <div className="h-px bg-border my-2 w-1/2 mx-auto" />
+
+          <Button variant="danger" fullWidth size="lg" className="h-14 font-black bg-danger/10 text-danger hover:bg-danger/20" onClick={() => handleResumeWorkout('new')}>
+            Ignorar y empezar desde cero
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────
   //  PANTALLA: INTRO DEL EJERCICIO
@@ -402,12 +719,40 @@ export default function FocusMode() {
 
         {/* Nombre del ejercicio */}
         <div className="flex-1 flex flex-col justify-center">
-          <p className="text-primary text-sm font-bold uppercase tracking-widest mb-3">
-            {currentEx?.muscle_group}
-          </p>
-          <h1 className="text-4xl font-black text-text mb-6 leading-tight">
-            {currentEx?.name || '...'}
-          </h1>
+          <div className="flex items-center gap-2 mb-3">
+            <p className="text-primary text-sm font-bold uppercase tracking-widest">
+              {currentEx?.muscle_group}
+            </p>
+            {isSuperset && (
+              <span className="bg-highlight/20 text-highlight text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-highlight/30">
+                Superset
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col items-center gap-1 mb-6">
+            <h1 className="text-4xl font-black text-text leading-tight text-center">
+              {currentEx?.name || '...'}
+            </h1>
+            {currentEx?.equipment && (
+              <span className="text-xs font-bold text-text-muted uppercase tracking-widest px-3 py-1 bg-surface-alt rounded-full">
+                {currentEx.equipment}
+              </span>
+            )}
+          </div>
+
+          {isSuperset && exercisesInSuperset.length > 1 && (
+            <div className="bg-highlight/5 border border-highlight/20 rounded-xl p-4 mb-6 text-left">
+              <p className="text-[10px] font-bold text-highlight uppercase tracking-widest mb-2">Este Superset incluye:</p>
+              <ul className="space-y-1">
+                {exercisesInSuperset.map((name, idx) => (
+                  <li key={idx} className={`text-sm flex items-center gap-2 ${name === currentEx?.name ? 'text-text font-bold' : 'text-text-muted'}`}>
+                    <span className="w-4 h-4 rounded-full bg-surface-alt flex items-center justify-center text-[9px] font-black">{idx + 1}</span>
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Datos de última vez */}
           <div className="bg-surface border border-border rounded-2xl p-4 mb-8">
@@ -418,58 +763,131 @@ export default function FocusMode() {
               <div className="skeleton h-10 rounded-xl" />
             ) : lastTime ? (
               <div className="flex gap-6">
-                <div>
-                  <p className="text-3xl font-black text-text">{lastTime.weight}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
-                  <p className="text-xs text-text-muted mt-1">Peso</p>
-                </div>
-                <div className="w-px bg-border" />
-                <div>
-                  <p className="text-3xl font-black text-text">{lastTime.reps}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
-                  <p className="text-xs text-text-muted mt-1">Reps</p>
-                </div>
-                <div className="w-px bg-border" />
-                <div>
-                  <p className="text-3xl font-black text-text">{lastTime.totalSets}</p>
-                  <p className="text-xs text-text-muted mt-1">Series</p>
-                </div>
+                {currentEx?.type === 'cardio' ? (
+                  <>
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.duration || 0}<span className="text-sm text-text-muted font-normal ml-1">min</span></p>
+                      <p className="text-xs text-text-muted mt-1">Tiempo</p>
+                    </div>
+                    {lastTime.distance ? (
+                      <>
+                        <div className="w-px bg-border" />
+                        <div>
+                          <p className="text-3xl font-black text-text">{lastTime.distance}<span className="text-sm text-text-muted font-normal ml-1">km</span></p>
+                          <p className="text-xs text-text-muted mt-1">Distancia</p>
+                        </div>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.weight || 0}<span className="text-sm text-text-muted font-normal ml-1">kg</span></p>
+                      <p className="text-xs text-text-muted mt-1">Peso</p>
+                    </div>
+                    <div className="w-px bg-border" />
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.reps || 0}<span className="text-sm text-text-muted font-normal ml-1">reps</span></p>
+                      <p className="text-xs text-text-muted mt-1">Reps</p>
+                    </div>
+                    <div className="w-px bg-border" />
+                    <div>
+                      <p className="text-3xl font-black text-text">{lastTime.totalSets}</p>
+                      <p className="text-xs text-text-muted mt-1">Series</p>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <p className="text-text-muted text-sm italic">Primera vez. ¡Dale caña!</p>
             )}
           </div>
 
+          {/* Tarjeta de Calentamiento (solo si hay datos previos y no es cardio) */}
+          {lastTime && setsDoneForThisEx === 0 && currentEx?.type !== 'cardio' && (
+            <WarmupSuggestionCard lastWeight={lastTime.weight || 0} />
+          )}
+
           {/* Target */}
           <p className="text-center text-text-muted text-sm mb-8">
-            Meta: <span className="text-text font-bold">{targetSets} series × {currentRoutineEx.target_reps} reps</span>
-            {' · '}Descanso: <span className="text-text font-bold">{routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90}s</span>
+            Meta: <span className="text-text font-bold">
+              {currentEx?.type === 'cardio' 
+                ? `${currentRoutineEx.target_duration || 0} min${currentRoutineEx.target_distance ? ` · ${currentRoutineEx.target_distance} km` : ''}` 
+                : `${targetSets} series × ${currentRoutineEx.target_reps || 0} reps`}
+            </span>
+            {currentEx?.type !== 'cardio' && (
+              <>
+                {' · '}Descanso: <span className="text-text font-bold">{routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90}s</span>
+              </>
+            )}
           </p>
         </div>
 
         {/* CTA */}
-        <Button
-          variant="highlight"
-          fullWidth
-          size="lg"
-          className="rounded-2xl h-16 text-xl font-black glow-highlight"
-          onClick={() => {
-            // Inicializar AudioContext en primera interacción de usuario
-            if (!audioCtx) {
-              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-              // Desbloquear tocando un sonido vacío
-              const osc = ctx.createOscillator();
-              const gainNode = ctx.createGain();
-              gainNode.gain.value = 0;
-              osc.connect(gainNode);
-              gainNode.connect(ctx.destination);
-              osc.start();
-              osc.stop(ctx.currentTime + 0.001);
-              setAudioCtx(ctx);
-            }
-            setPhase('active');
+        <div className="flex flex-col gap-3">
+          <Button
+            variant="highlight"
+            fullWidth
+            size="lg"
+            className="rounded-2xl h-16 text-xl font-black glow-highlight"
+            onClick={() => {
+              // Inicializar AudioContext en primera interacción de usuario
+              if (!audioCtx) {
+                const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                gainNode.gain.value = 0;
+                osc.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.001);
+                setAudioCtx(ctx);
+              }
+              setPhase('active');
+            }}
+          >
+            <Play className="mr-2 fill-current" /> Empezar serie {setIndex + 1}
+          </Button>
+
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <button 
+              onClick={() => setShowSubstituteModal(true)}
+              className="h-12 rounded-2xl flex items-center justify-center text-sm font-bold text-primary hover:bg-primary/10 transition-all border border-primary/20"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Sustituir
+            </button>
+            <button 
+              onClick={handleSkipExercise}
+              className="h-12 rounded-2xl flex items-center justify-center text-sm font-bold text-text-muted hover:text-text hover:bg-surface-alt/50 transition-all border border-transparent hover:border-border"
+            >
+              Omitir Ejercicio
+            </button>
+          </div>
+        </div>
+
+        {showSubstituteModal && currentRoutineEx && (
+          <LiveSubstituteModal
+            currentExerciseId={currentRoutineEx.exercise_id}
+            allExercises={allExercises}
+            onClose={() => setShowSubstituteModal(false)}
+            onSubstitute={handleSubstitute}
+            onCreateNew={() => {
+              setShowSubstituteModal(false);
+              setShowCreateExerciseModal(true);
+            }}
+          />
+        )}
+
+        <ExerciseModal
+          isOpen={showCreateExerciseModal}
+          onClose={() => setShowCreateExerciseModal(false)}
+          mode="create"
+          onSuccess={(newId) => {
+            setShowCreateExerciseModal(false);
+            handleSubstitute(newId);
           }}
-        >
-          <Play className="mr-2 fill-current" /> Empezar serie 1
-        </Button>
+        />
       </div>
     );
   }
@@ -484,57 +902,122 @@ export default function FocusMode() {
           title={currentEx?.name || 'Ejercicio'} 
           subtitle={`Serie ${setIndex + 1} de ${targetSets}`} 
         />
+        {isSuperset && (
+          <div className="flex justify-center -mt-4 mb-2">
+            <span className="bg-highlight/20 text-highlight text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-highlight/30">
+              Superset
+            </span>
+          </div>
+        )}
 
         {/* Inputs grandes */}
         <div className="flex-1 flex flex-col justify-center gap-6">
           {/* Sugerencia de la última vez */}
           {lastTime && (
             <p className="text-center text-sm text-text-muted">
-              Última vez: <span className="text-text font-bold">{lastTime.weight}kg × {lastTime.reps} reps</span>
+              Última vez: <span className="text-text font-bold">
+                {currentEx?.type === 'cardio' 
+                  ? `${lastTime.duration || 0} min${lastTime.distance ? ` × ${lastTime.distance} km` : ''}` 
+                  : `${lastTime.weight || 0}kg × ${lastTime.reps || 0} reps`}
+              </span>
             </p>
           )}
 
-          {/* Peso */}
-          <div>
-            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
-              Peso (kg)
-            </label>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => adjustValue(setWeight, -2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={weight}
-                onChange={e => handleNumericInput(e.target.value, setWeight)}
-                placeholder={lastTime ? String(lastTime.weight) : '0'}
-                className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
-                  border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
-                  placeholder:text-border transition-colors"
-              />
-              <button type="button" onClick={() => adjustValue(setWeight, 2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
-            </div>
-          </div>
+          {currentEx?.type === 'cardio' ? (
+            <>
+              {/* Duración (Minutos) */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Tiempo (Minutos)
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setDuration, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={duration}
+                    onChange={e => handleNumericInput(e.target.value, setDuration)}
+                    placeholder={lastTime ? String(lastTime.duration) : String(currentRoutineEx?.target_duration || '15')}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setDuration, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+              </div>
 
-          {/* Reps */}
-          <div>
-            <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
-              Repeticiones
-            </label>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => adjustValue(setReps, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={reps}
-                onChange={e => handleNumericInput(e.target.value, setReps)}
-                placeholder={lastTime ? String(lastTime.reps) : String(targetSets)}
-                className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
-                  border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
-                  placeholder:text-border transition-colors"
-              />
-              <button type="button" onClick={() => adjustValue(setReps, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
-            </div>
-          </div>
+              {/* Distancia (Km) Opcional */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Distancia (km) - Opcional
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setDistance, -0.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={distance}
+                    onChange={e => handleNumericInput(e.target.value, setDistance)}
+                    placeholder={lastTime ? String(lastTime.distance || '') : ''}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setDistance, 0.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Peso */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Peso (kg)
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setWeight, -2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={weight}
+                    onChange={e => handleNumericInput(e.target.value, setWeight)}
+                    placeholder={lastTime ? String(lastTime.weight) : '0'}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setWeight, 2.5)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+                
+                {/* Calculadora de discos solo si no es cardio */}
+                <PlateCalculator 
+                  weight={parseFloat(weight) || 0} 
+                  equipment={currentEx?.equipment || ''} 
+                />
+              </div>
+
+              {/* Reps */}
+              <div>
+                <label className="text-xs text-text-muted font-bold uppercase tracking-widest block text-center mb-3">
+                  Repeticiones
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => adjustValue(setReps, -1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">-</button>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={reps}
+                    onChange={e => handleNumericInput(e.target.value, setReps)}
+                    placeholder={lastTime ? String(lastTime.reps) : String(targetSets)}
+                    className="flex-1 min-w-0 h-24 bg-surface text-5xl font-black text-center rounded-2xl
+                      border-2 border-border focus:outline-none focus:ring-2 focus:ring-primary
+                      placeholder:text-border transition-colors"
+                  />
+                  <button type="button" onClick={() => adjustValue(setReps, 1)} className="w-14 h-24 bg-surface-alt border border-border rounded-2xl flex items-center justify-center text-3xl font-normal text-text-muted active:scale-95 transition-all select-none touch-manipulation">+</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Botón confirmar + descanso */}
@@ -545,12 +1028,10 @@ export default function FocusMode() {
             size="lg"
             className="h-16 rounded-2xl text-lg font-black glow-highlight"
             onClick={handleConfirmSet}
-            disabled={!reps}
+            disabled={currentEx?.type === 'cardio' ? !duration : !reps}
           >
             <Check className="mr-2 w-6 h-6" />
-            {isLastSet && isLastExercise
-              ? 'Completar Rutina'
-              : 'Confirmar — Iniciar Descanso'}
+            {!currentPlan.isLastInRound ? 'Siguiente (Superset)' : 'Confirmar — Descanso'}
           </Button>
         </div>
       </div>
@@ -604,9 +1085,7 @@ export default function FocusMode() {
             onClick={handleNextSet}
           >
             <ChevronRight className="mr-1 w-6 h-6" />
-            {isLastSet
-                ? `Ejercicio ${exIndex + 2}: ${allExercises.find(e => e.id === routine.exercises[exIndex + 1]?.exercise_id)?.name || '...'}`
-                : `Serie ${setIndex + 2} de ${targetSets}`}
+            Siguiente
           </Button>
 
           {restDisplay > 0 && (
@@ -690,10 +1169,78 @@ export default function FocusMode() {
             fullWidth
             size="lg"
             className="h-16 rounded-2xl font-black text-xl glow-highlight transition-all hover:scale-[1.02] active:scale-[0.98]"
+            onClick={() => setPhase('rpe_feedback')}
+            disabled={saving}
+          >
+            Continuar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: RPE / SENSACIONES (FEEDBACK FINAL)
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'rpe_feedback') {
+    const feedback = (() => {
+      if (globalRpe <= 4) return { title: 'Recuperación Activa', desc: 'Esfuerzo muy suave. Si buscabas hipertrofia, necesitas aumentar el peso o llegar más cerca del fallo.' };
+      if (globalRpe <= 6) return { title: 'Moderado', desc: 'Buen estímulo, pero con mucho margen. Si haces muchas reps y no sientes fatiga, ajusta tu técnica o peso.' };
+      if (globalRpe <= 8) return { title: 'Punto Óptimo', desc: '¡Excelente! Encontraste el punto dulce para crecer. Buen trabajo muscular sin destrozar tus articulaciones.' };
+      if (globalRpe === 9) return { title: 'Muy Exigente', desc: 'Llegaste al fallo real o muy cerca. Perfecto para series clave, pero requerirá buena recuperación.' };
+      return { title: 'Fallo Absoluto', desc: 'Esfuerzo extremo y peligroso si se abusa. Recuerda: si te duele la articulación y no el músculo, bájale al ego.' };
+    })();
+
+    return (
+      <div className="min-h-dvh flex flex-col px-6 py-8 relative bg-bg overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <GlobalHeader title="Paso Final" subtitle="Sensaciones de la Sesión" />
+        
+        <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-black text-text mb-3">¿Cómo sentiste el entrenamiento?</h2>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Más allá de sudar, lo importante es encontrar las señales correctas de tu cuerpo.
+            </p>
+          </div>
+
+          <div className="bg-surface border border-border rounded-3xl p-6 mb-8 relative">
+            <div className="absolute -top-5 left-1/2 -translate-x-1/2 w-10 h-10 bg-primary/20 rounded-full flex items-center justify-center border border-primary/30">
+              <Activity className="w-5 h-5 text-primary" />
+            </div>
+
+            <div className="text-center mt-4 mb-8">
+              <span className="text-[5rem] font-black text-text leading-none tracking-tighter">
+                {globalRpe}
+              </span>
+              <span className="text-xl text-text-muted font-bold ml-1">/ 10</span>
+            </div>
+
+            <input 
+              type="range" 
+              min="1" 
+              max="10" 
+              value={globalRpe}
+              onChange={(e) => setGlobalRpe(Number(e.target.value))}
+              className="w-full accent-primary h-2 bg-surface-alt rounded-lg appearance-none cursor-pointer mb-6"
+            />
+
+            <div className="bg-bg rounded-xl p-4 border border-border/50 transition-all duration-300">
+              <h3 className="text-base font-black text-highlight mb-1">{feedback.title}</h3>
+              <p className="text-xs text-text-muted leading-relaxed">{feedback.desc}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="w-full pt-4 pb-4">
+          <Button
+            variant="primary"
+            fullWidth
+            size="lg"
+            className="h-16 rounded-2xl font-black text-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
             onClick={handleFinish}
             disabled={saving}
           >
-            {saving ? 'Guardando Entrenamiento...' : 'Finalizar y Guardar'}
+            {saving ? 'Guardando Sesión...' : 'Finalizar Sesión'}
           </Button>
         </div>
       </div>
@@ -732,6 +1279,7 @@ export default function FocusMode() {
         isSameDay={isSameDay}
         isRestored={isRestored}
         newStreak={newStreak}
+        isDoubleSession={isResumed} // Activa el efecto visual "Rayo" si reanudó sesión
         onClose={() => navigate('/')}
       />
     );

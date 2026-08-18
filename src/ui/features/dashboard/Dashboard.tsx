@@ -8,6 +8,8 @@ import { DailyQuoteCard } from './components/DailyQuoteCard';
 import { ProgressPreviewCard } from './components/ProgressPreviewCard';
 import { WorkoutCTA } from './components/WorkoutCTA';
 import { RecentHistory } from './components/RecentHistory';
+import { BookOpen } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -18,6 +20,7 @@ function getGreeting(): string {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   // Perfil
   const { data: userProfile = null, error: profileError } = useUserProfile(user?.uid);
@@ -79,6 +82,23 @@ export default function Dashboard() {
 
         {/* ── Historial reciente (máx 3) ── */}
         <RecentHistory loadingSessions={loadingSessions} recentSessions={recentSessions} error={sessionsError} refetch={refetchSessions} />
+
+        {/* ── Academia CTA ── */}
+        <div 
+          onClick={() => navigate('/academy')}
+          className="bg-surface border border-border rounded-3xl p-6 relative overflow-hidden group cursor-pointer active:scale-95 transition-all mb-4"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 transition-all group-hover:bg-primary/20" />
+          <div className="flex items-center gap-4 relative z-10">
+            <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30 text-primary">
+              <BookOpen className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-text leading-tight">Academia Forjador</h3>
+              <p className="text-xs text-text-muted mt-1">Aprende a escuchar tu cuerpo</p>
+            </div>
+          </div>
+        </div>
 
       </div>
     </div>

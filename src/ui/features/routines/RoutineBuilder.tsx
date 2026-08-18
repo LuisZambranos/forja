@@ -5,7 +5,7 @@ import { Button } from '@ui/components/ui/Button';
 import { Modal } from '@ui/components/ui/Modal';
 import { SearchableSelect } from '@ui/components/ui/SearchableSelect';
 import { ExerciseModal } from '../exercises/components/ExerciseModal';
-import { ChevronLeft, Plus, X, Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
+import { ChevronLeft, Plus, X, Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Trash2, Link2, Unlink } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine, useCreateRoutine, useUpdateRoutine, useDeleteRoutine } from '@ui/hooks/useRoutines';
 import type { Exercise, RoutineExercise } from '@core/models';
@@ -24,9 +24,7 @@ export default function RoutineBuilder() {
   const [loadingInitial, setLoadingInitial] = useState(isEditing);
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    'Pecho': true
-  });
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   
   // Estados para nuevo ejercicio inline
@@ -98,10 +96,13 @@ export default function RoutineBuilder() {
   };
 
   const addExercise = (exerciseId: string) => {
-    setRoutineExercises(prev => [...prev, {
-      exercise_id: exerciseId,
-      target_sets: 3,
-      target_reps: 10
+    const exercise = allExercises.find(e => e.id === exerciseId);
+    const isCardio = exercise?.type === 'cardio';
+    setRoutineExercises([...routineExercises, { 
+      exercise_id: exerciseId, 
+      target_sets: 1, 
+      target_reps: isCardio ? 0 : 10,
+      target_duration: isCardio ? 15 : undefined 
     }]);
   };
 
@@ -127,6 +128,42 @@ export default function RoutineBuilder() {
 
   const removeExercise = (index: number) => {
     setRoutineExercises(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const toggleSupersetLink = (index: number) => {
+    if (index === 0) return;
+    const current = routineExercises[index];
+    const prev = routineExercises[index - 1];
+    const newExercises = [...routineExercises];
+    
+    if (current.superset_id && current.superset_id === prev.superset_id) {
+      const oldSupersetId = current.superset_id;
+      for (let i = index; i < newExercises.length; i++) {
+        if (newExercises[i].superset_id === oldSupersetId) {
+          newExercises[i] = { ...newExercises[i], superset_id: undefined };
+        } else {
+          break;
+        }
+      }
+    } else {
+      let supersetId = prev.superset_id;
+      if (!supersetId) {
+        supersetId = `superset_${Date.now()}`;
+        newExercises[index - 1] = { ...prev, superset_id: supersetId };
+      }
+      const oldCurrentSupersetId = current.superset_id;
+      newExercises[index] = { ...current, superset_id: supersetId };
+      if (oldCurrentSupersetId) {
+        for (let i = index + 1; i < newExercises.length; i++) {
+          if (newExercises[i].superset_id === oldCurrentSupersetId) {
+            newExercises[i] = { ...newExercises[i], superset_id: supersetId };
+          } else {
+            break;
+          }
+        }
+      }
+    }
+    setRoutineExercises(newExercises);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -300,66 +337,112 @@ export default function RoutineBuilder() {
                 <p className="text-text-muted text-sm font-medium">Aún no hay ejercicios. Agrega algunos desde el catálogo abajo.</p>
               </div>
             ) : (
-              <div className="flex flex-col gap-4">
+              <div className="flex flex-col">
                 {routineExercises.map((re, i) => {
                   const ex = allExercises.find(e => e.id === re.exercise_id);
+                  const isLinkedWithPrev = i > 0 && re.superset_id && re.superset_id === routineExercises[i - 1].superset_id;
+                  const isLinkedWithNext = i < routineExercises.length - 1 && re.superset_id && re.superset_id === routineExercises[i + 1].superset_id;
+                  
                   return (
-                    <div key={i} className="relative bg-surface border border-border rounded-2xl p-5 shadow-sm">
-                      {/* Controles Reordenar/Eliminar */}
-                      <div className="absolute top-4 right-4 flex gap-1">
-                        <button 
-                          type="button" 
-                          onClick={() => moveExercise(i, 'up')}
-                          disabled={i === 0}
-                          className="w-8 h-8 rounded-full bg-surface-alt text-text flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
-                        >
-                          <ArrowUp className="w-4 h-4" />
-                        </button>
-                        <button 
-                          type="button" 
-                          onClick={() => moveExercise(i, 'down')}
-                          disabled={i === routineExercises.length - 1}
-                          className="w-8 h-8 rounded-full bg-surface-alt text-text flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
-                        >
-                          <ArrowDown className="w-4 h-4" />
-                        </button>
-                        <button 
-                          type="button" 
-                          onClick={() => removeExercise(i)}
-                          className="w-8 h-8 rounded-full bg-danger/10 text-danger flex items-center justify-center ml-1 active:scale-95 transition-transform hover:bg-danger/20"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                      
-                      <div className="pr-28 mb-5">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1 block">
-                          {ex?.muscle_group || 'Otro'}
-                        </span>
-                        <h3 className="font-bold text-lg text-text leading-tight">{ex?.name || 'Cargando...'}</h3>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
-                          <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Series</label>
-                          <input 
-                            type="number" 
-                            value={re.target_sets}
-                            onChange={e => updateExercise(i, 'target_sets', Number(e.target.value))}
-                            className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
-                            min={1}
-                          />
+                    <div key={i} className="relative flex flex-col items-center">
+                      {/* Enlace visual entre tarjetas */}
+                      {i > 0 && (
+                        <div className="w-full flex items-center justify-center relative -my-1 z-10">
+                          <button
+                            type="button"
+                            onClick={() => toggleSupersetLink(i)}
+                            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border ${
+                              isLinkedWithPrev 
+                                ? 'bg-highlight text-white border-highlight shadow-sm' 
+                                : 'bg-surface-alt text-text-muted border-border hover:bg-border/50'
+                            }`}
+                          >
+                            {isLinkedWithPrev ? <><Unlink className="w-3 h-3" /> Desvincular Superset</> : <><Link2 className="w-3 h-3" /> Vincular con Anterior</>}
+                          </button>
                         </div>
-                        <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
-                          <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Reps</label>
-                          <input 
-                            type="number" 
-                            value={re.target_reps}
-                            onChange={e => updateExercise(i, 'target_reps', Number(e.target.value))}
-                            className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
-                            min={1}
-                          />
+                      )}
+
+                      <div className={`w-full relative bg-surface border border-border p-5 shadow-sm transition-all
+                        ${isLinkedWithPrev ? 'rounded-t-none border-t-highlight/30' : 'rounded-t-2xl'}
+                        ${isLinkedWithNext ? 'rounded-b-none border-b-highlight/30' : 'rounded-b-2xl'}
+                        ${(isLinkedWithPrev || isLinkedWithNext) ? 'border-x-highlight/30 bg-highlight/5' : 'mb-4'}
+                      `}>
+                        {/* Contenedor del Superset Indicator (Borde izquierdo) */}
+                        {(isLinkedWithPrev || isLinkedWithNext) && (
+                          <div className={`absolute left-0 w-1 bg-highlight ${isLinkedWithPrev && isLinkedWithNext ? 'inset-y-0' : isLinkedWithPrev ? 'top-0 bottom-4 rounded-b-full' : 'top-4 bottom-0 rounded-t-full'}`} />
+                        )}
+
+                        {/* Controles Reordenar/Eliminar */}
+                        <div className="absolute top-4 right-4 flex gap-1">
+                          <button 
+                            type="button" 
+                            onClick={() => moveExercise(i, 'up')}
+                            disabled={i === 0}
+                            className="w-8 h-8 rounded-full bg-surface-alt text-text flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => moveExercise(i, 'down')}
+                            disabled={i === routineExercises.length - 1}
+                            className="w-8 h-8 rounded-full bg-surface-alt text-text flex items-center justify-center disabled:opacity-30 active:scale-95 transition-transform"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => removeExercise(i)}
+                            className="w-8 h-8 rounded-full bg-danger/10 text-danger flex items-center justify-center ml-1 active:scale-95 transition-transform hover:bg-danger/20"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
+                        
+                        <div className="pr-28 mb-5">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1 block">
+                            {ex?.muscle_group || 'Otro'}
+                          </span>
+                          <h3 className="font-bold text-lg text-text leading-tight">{ex?.name || 'Cargando...'}</h3>
+                        </div>
+                      
+                      {ex?.type === 'cardio' ? (
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
+                            <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Minutos</label>
+                            <input 
+                              type="number" 
+                              value={re.target_duration || 15}
+                              onChange={e => updateExercise(i, 'target_duration', Number(e.target.value))}
+                              className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
+                              min={1}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
+                            <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Series</label>
+                            <input 
+                              type="number" 
+                              value={re.target_sets}
+                              onChange={e => updateExercise(i, 'target_sets', Number(e.target.value))}
+                              className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
+                              min={1}
+                            />
+                          </div>
+                          <div className="bg-bg rounded-xl p-2 border border-border/50 flex flex-col items-center justify-center">
+                            <label className="text-[10px] text-text-muted font-bold uppercase tracking-widest block text-center mb-1">Reps</label>
+                            <input 
+                              type="number" 
+                              value={re.target_reps}
+                              onChange={e => updateExercise(i, 'target_reps', Number(e.target.value))}
+                              className="w-full bg-transparent text-center font-black text-xl text-text outline-none"
+                              min={1}
+                            />
+                          </div>
+                        </div>
+                      )}
                       </div>
                     </div>
                   );

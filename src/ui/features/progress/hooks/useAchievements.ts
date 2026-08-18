@@ -11,13 +11,16 @@ export function useAchievements(uid?: string) {
   const isLoading = loadingRoutines || loadingSessions;
 
   const targetRoutineDays = useMemo(() => {
-    const uniqueDays = new Set<number>();
+    const map = new Map<number, string[]>();
     routines.forEach(r => {
       if (r.scheduled_days) {
-        r.scheduled_days.forEach(d => uniqueDays.add(d));
+        r.scheduled_days.forEach(d => {
+           if (!map.has(d)) map.set(d, []);
+           map.get(d)!.push(r.id);
+        });
       }
     });
-    return Array.from(uniqueDays);
+    return map;
   }, [routines]);
 
   const monthSessions = useMemo(() => {
@@ -58,14 +61,14 @@ export function useAchievements(uid?: string) {
 
     const weeksMap = new Map<number, {
       expected: number;
-      actual: Set<string>;
+      actual: Map<string, string[]>;
       daysInMonth: Date[];
     }>();
 
     for (let d = new Date(startOfMonth); d <= endDate; d.setDate(d.getDate() + 1)) {
       const monday = getMonday(new Date(d));
       if (!weeksMap.has(monday)) {
-        weeksMap.set(monday, { expected: 0, actual: new Set(), daysInMonth: [] });
+        weeksMap.set(monday, { expected: 0, actual: new Map(), daysInMonth: [] });
       }
       weeksMap.get(monday)!.daysInMonth.push(new Date(d));
     }
@@ -75,13 +78,22 @@ export function useAchievements(uid?: string) {
       d.setHours(0, 0, 0, 0);
       const monday = getMonday(new Date(d));
       if (weeksMap.has(monday)) {
-        weeksMap.get(monday)!.actual.add(d.toISOString().split('T')[0]);
+        const actualMap = weeksMap.get(monday)!.actual;
+        const dateStr = d.toISOString().split('T')[0];
+        if (!actualMap.has(dateStr)) actualMap.set(dateStr, []);
+        actualMap.get(dateStr)!.push(session.routine_id);
       }
     });
 
     let totalExpected = 0;
     let totalActual = 0;
-    const weeksBreakdown: { label: string; expected: number; actual: number; passed: boolean }[] = [];
+    const weeksBreakdown: { 
+      label: string; 
+      expected: number; 
+      actual: number; 
+      passed: boolean;
+      days: { date: string, label: string, expected: boolean, actual: boolean, status: 'completed' | 'missed' | 'pending_today' | 'scheduled_future' | 'none' | 'recovered' }[]
+    }[] = [];
 
     const firstWorkoutTime = firstWorkoutDate.getTime();
     let weekNum = 1;
@@ -96,24 +108,118 @@ export function useAchievements(uid?: string) {
          return; 
       }
 
+      const daysDetails: typeof weeksBreakdown[0]['days'] = [];
+      const todayTime = new Date().setHours(0, 0, 0, 0);
+
+      // Paso 1: Encontrar fallos y extras en la semana para detectar "Recuperados"
+      const missedRoutines: { date: string, routineId: string }[] = [];
+      const extraRoutines: { date: string, routineId: string }[] = [];
+      
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(mondayTime + i * 24 * 60 * 60 * 1000);
+        const dateStr = d.toISOString().split('T')[0];
+        const isAfterFirstWorkout = d.getTime() >= firstWorkoutTime;
+        
+        if (!isAfterFirstWorkout) continue;
+
+        const scheduledRoutineIds = targetRoutineDays.get(d.getDay()) || [];
+        const actualRoutineIds = weekData.actual.get(dateStr) || [];
+        
+        // Rutinas falladas (días pasados)
+        if (d.getTime() < todayTime) {
+           scheduledRoutineIds.forEach(rId => {
+              if (!actualRoutineIds.includes(rId)) {
+                  missedRoutines.push({ date: dateStr, routineId: rId });
+              }
+           });
+        }
+        
+        // Rutinas extra
+        actualRoutineIds.forEach(rId => {
+           if (!scheduledRoutineIds.includes(rId)) {
+               extraRoutines.push({ date: dateStr, routineId: rId });
+           }
+        });
+      }
+
+      const recoveredDates = new Set<string>();
+      
+      extraRoutines.forEach(extra => {
+          const missedIdx = missedRoutines.findIndex(m => m.routineId === extra.routineId);
+          if (missedIdx !== -1) {
+             recoveredDates.add(missedRoutines[missedIdx].date);
+             missedRoutines.splice(missedIdx, 1);
+          }
+      });
+      
+      // Calcular 7 días para el modal
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(mondayTime + i * 24 * 60 * 60 * 1000);
+        const dateStr = d.toISOString().split('T')[0];
+        
+        const isAfterFirstWorkout = d.getTime() >= firstWorkoutTime;
+        const isExpected = isAfterFirstWorkout && targetRoutineDays.has(d.getDay());
+        const isActual = weekData.actual.has(dateStr);
+        
+        let status: 'completed' | 'missed' | 'pending_today' | 'scheduled_future' | 'none' | 'recovered' = 'none';
+        if (isActual) {
+           status = 'completed';
+        } else if (isExpected) {
+           if (d.getTime() < todayTime) {
+              if (recoveredDates.has(dateStr)) {
+                  status = 'recovered';
+              } else {
+                  status = 'missed';
+              }
+           } else if (d.getTime() === todayTime) {
+              status = 'pending_today';
+           } else {
+              status = 'scheduled_future';
+           }
+        }
+        
+        const dayName = ['D','L','M','X','J','V','S'][d.getDay()];
+        
+        daysDetails.push({
+           date: dateStr,
+           label: dayName,
+           expected: isExpected,
+           actual: isActual,
+           status
+        });
+      }
+
       let expectedForWeek = 0;
+      let actualOnExpected = 0;
+      let totalActualInWeek = 0;
       
       weekData.daysInMonth.forEach(day => {
         if (day.getTime() >= firstWorkoutTime) {
-           if (targetRoutineDays.includes(day.getDay()) || targetRoutineDays.length === 0) {
+           const isExpectedDay = targetRoutineDays.has(day.getDay()) || targetRoutineDays.size === 0;
+           const dateStr = day.toISOString().split('T')[0];
+           const isDone = weekData.actual.has(dateStr);
+           const isRecovered = recoveredDates.has(dateStr);
+           
+           if (isExpectedDay) {
               expectedForWeek++;
+              if (isDone || isRecovered) actualOnExpected++;
            }
+           if (isDone) totalActualInWeek++;
         }
       });
 
-      if (targetRoutineDays.length === 0) {
+      let actualForWeek = actualOnExpected;
+
+      if (targetRoutineDays.size === 0) {
          const validDays = weekData.daysInMonth.filter(d => d.getTime() >= firstWorkoutTime).length;
          expectedForWeek = Math.round((3 / 7) * validDays); 
+         actualForWeek = totalActualInWeek;
       }
-
-      const actualForWeek = weekData.actual.size;
       
-      if (expectedForWeek === 0 && actualForWeek > 0) expectedForWeek = actualForWeek;
+      if (expectedForWeek === 0 && totalActualInWeek > 0) {
+        expectedForWeek = totalActualInWeek;
+        actualForWeek = totalActualInWeek;
+      }
 
       const passed = actualForWeek >= expectedForWeek;
 
@@ -124,7 +230,8 @@ export function useAchievements(uid?: string) {
         label: `Sem ${weekNum}`,
         expected: expectedForWeek,
         actual: actualForWeek,
-        passed: passed
+        passed: passed,
+        days: daysDetails
       });
 
       weekNum++;
@@ -142,7 +249,7 @@ export function useAchievements(uid?: string) {
   }, [monthSessions, targetRoutineDays]);
 
   return {
-    targetDaysPerWeek: targetRoutineDays.length || 3,
+    targetDaysPerWeek: targetRoutineDays.size || 3,
     consistencyStats,
     isLoading
   };
