@@ -1,26 +1,33 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@ui/hooks/useAuth';
 import { useWorkoutStore } from '../../../store/workoutStore';
-import type { Routine, WorkoutSet } from '@core/models';
+import type { Routine, WorkoutSet, WorkoutSession } from '@core/models';
 import { Button } from '@ui/components/ui/Button';
 import { Modal } from '@ui/components/ui/Modal';
-import { Play, Timer, ChevronRight, Check, X } from 'lucide-react';
+import { Play, Timer, ChevronRight, Check, X, Activity } from 'lucide-react';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine } from '@ui/hooks/useRoutines';
-import { useSaveWorkoutSession } from '@ui/hooks/useWorkout';
+import { getIncompleteSessionToday } from '@core/services/workout.service';
+import { useSaveWorkoutSession, useUpdateWorkoutSession } from '@ui/hooks/useWorkout';
 import { getLastExerciseStats } from '@core/services/workout.service';
 import { StreakCelebration } from './components/StreakCelebration';
 
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
 // ──────────────────────────────────────────────
-type Phase = 'intro' | 'active' | 'resting' | 'completed' | 'streak_celebration';
+type Phase = 'resume_prompt' | 'intro' | 'active' | 'resting' | 'completed' | 'streak_celebration';
 
 interface LastTimeStats {
   weight: number;
   reps: number;
   totalSets: number;
+}
+
+interface PlanItem {
+  routineExIndex: number;
+  setNumber: number;
+  isLastInRound: boolean;
 }
 
 // ──────────────────────────────────────────────
@@ -45,11 +52,14 @@ export default function FocusMode() {
   // Estado de la máquina
   const [phase, setPhase] = useState<Phase>('intro');
   const [routine, setRoutine] = useState<Routine | null>(null);
-  const [exIndex, setExIndex] = useState(0);         // índice del ejercicio actual
-  const [setIndex, setSetIndex] = useState(0);       // serie actual (0-based)
+  const [existingSession, setExistingSession] = useState<WorkoutSession | null>(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [isResumed, setIsResumed] = useState(false);
+  const [planIndex, setPlanIndex] = useState(0);
   const [weight, setWeight] = useState('');
   const [reps, setReps] = useState('');
   const [completedSets, setCompletedSets] = useState<WorkoutSet[]>([]);
+  const [skippedExercises, setSkippedExercises] = useState<string[]>([]);
   const [lastTime, setLastTime] = useState<LastTimeStats | null>(null);
   const [loadingLast, setLoadingLast] = useState(false);
   const [restEndsAt, setRestEndsAt] = useState<number | null>(null);
@@ -90,16 +100,62 @@ export default function FocusMode() {
   const [progressCount, setProgressCount] = useState(0);
   const [progressExercises] = useState(new Set<string>());
 
-  // Cargar rutina
+  // Cargar rutina y chequear sesiones incompletas
   const { data: routineData, isLoading: isLoadingRoutine } = useRoutine(routineId);
+
   useEffect(() => {
-    if (routineData) {
-      setRoutine(routineData);
-    } else if (!isLoadingRoutine && !routine) {
+    if (routineData && user) {
+      getIncompleteSessionToday(user.uid, routineData.id).then(session => {
+        if (session) {
+          setExistingSession(session);
+          setRoutine(routineData);
+          setPhase('resume_prompt');
+        } else {
+          setRoutine(routineData);
+          setPhase('intro');
+        }
+        setCheckingSession(false);
+      });
+    } else if (!isLoadingRoutine && !routineData) {
       alert('Rutina no encontrada');
       navigate('/');
     }
-  }, [routineData, isLoadingRoutine, navigate, routine]);
+  }, [routineData, isLoadingRoutine, navigate, user]);
+
+  const handleResumeWorkout = (mode: 'all' | 'strength' | 'cardio' | 'new') => {
+    if (mode !== 'new' && existingSession && existingSession.skipped_exercise_ids) {
+      const skippedSet = new Set(existingSession.skipped_exercise_ids);
+      let remainingExercises = routine!.exercises.filter(ex => skippedSet.has(ex.exercise_id));
+      
+      if (mode === 'cardio') {
+         remainingExercises = remainingExercises.filter(ex => {
+            const exerciseDef = allExercises.find(e => e.id === ex.exercise_id);
+            return exerciseDef?.muscle_group.toLowerCase() === 'cardio';
+         });
+      } else if (mode === 'strength') {
+         remainingExercises = remainingExercises.filter(ex => {
+            const exerciseDef = allExercises.find(e => e.id === ex.exercise_id);
+            return exerciseDef?.muscle_group.toLowerCase() !== 'cardio';
+         });
+      }
+
+      if (remainingExercises.length === 0) {
+        alert('No hay ejercicios de este tipo para retomar.');
+        return;
+      }
+
+      const modifiedRoutine: Routine = {
+        ...routine!,
+        exercises: remainingExercises
+      };
+      
+      setRoutine(modifiedRoutine);
+      setIsResumed(true);
+    } else {
+      setExistingSession(null);
+    }
+    setPhase('intro');
+  };
 
   // Caché de ejercicios
   const { data: myExercises = [] } = useMyExercises(user?.uid);
@@ -108,6 +164,7 @@ export default function FocusMode() {
 
   // Hook mutation
   const { mutateAsync: saveWorkout } = useSaveWorkoutSession();
+  const { mutateAsync: updateWorkout } = useUpdateWorkoutSession();
 
   // Wake lock
   useEffect(() => {
@@ -120,25 +177,73 @@ export default function FocusMode() {
     return () => { wl?.release(); };
   }, []);
 
+  const plan = useMemo<PlanItem[]>(() => {
+    if (!routine) return [];
+    const p: PlanItem[] = [];
+    let i = 0;
+    while (i < routine.exercises.length) {
+      const current = routine.exercises[i];
+      if (current.superset_id) {
+        const supersetIndices = [i];
+        let j = i + 1;
+        while (j < routine.exercises.length && routine.exercises[j].superset_id === current.superset_id) {
+          supersetIndices.push(j);
+          j++;
+        }
+        const maxSets = Math.max(...supersetIndices.map(idx => routine.exercises[idx].target_sets || 3));
+        for (let s = 0; s < maxSets; s++) {
+          const setsInRound: PlanItem[] = [];
+          for (let k = 0; k < supersetIndices.length; k++) {
+            const exIdx = supersetIndices[k];
+            const targetSets = routine.exercises[exIdx].target_sets || 3;
+            if (s < targetSets) {
+              const item = { routineExIndex: exIdx, setNumber: s, isLastInRound: false };
+              p.push(item);
+              setsInRound.push(item);
+            }
+          }
+          if (setsInRound.length > 0) {
+            setsInRound[setsInRound.length - 1].isLastInRound = true;
+          }
+        }
+        i = j;
+      } else {
+        const targetSets = current.target_sets || 3;
+        for (let s = 0; s < targetSets; s++) {
+          p.push({ routineExIndex: i, setNumber: s, isLastInRound: true });
+        }
+        i++;
+      }
+    }
+    return p;
+  }, [routine]);
+
   // Cargar "última vez" cuando cambia el ejercicio
   useEffect(() => {
-    if (!routine || !user) return;
-    const ex = routine.exercises[exIndex];
+    if (!routine || !user || plan.length === 0) return;
+    const currentPlan = plan[planIndex];
+    if (!currentPlan) return;
+    const ex = routine.exercises[currentPlan.routineExIndex];
     if (!ex) return;
+
     setLoadingLast(true);
     getLastExerciseStats(user.uid, ex.exercise_id)
       .then(res => {
         setLastTime(res);
-        if (res) {
-          setWeight(String(res.weight));
-          setReps(String(res.reps));
-        } else {
-          setWeight('');
-          setReps(String(ex.target_reps));
+        // Si no hemos cargado peso desde el historial reciente en esta misma sesión:
+        const lastSetThisSession = completedSets.slice().reverse().find(s => s.exercise_id === ex.exercise_id);
+        if (!lastSetThisSession) {
+          if (res) {
+            setWeight(String(res.weight));
+            setReps(String(res.reps));
+          } else {
+            setWeight('');
+            setReps(String(ex.target_reps));
+          }
         }
       })
       .finally(() => setLoadingLast(false));
-  }, [exIndex, routine, user]);
+  }, [planIndex, plan, routine, user]); // no dependemos de completedSets para evitar loops
 
   const adjustValue = (setter: React.Dispatch<React.SetStateAction<string>>, amount: number, min: number = 0) => {
     setter(prev => {
@@ -146,6 +251,18 @@ export default function FocusMode() {
       return Math.max(min, val + amount).toString();
     });
   };
+
+  const exercisesInSuperset = useMemo(() => {
+    if (!routine || plan.length === 0) return [];
+    const currentPlan = plan[planIndex] || plan[0];
+    if (!currentPlan) return [];
+    const currentRoutineEx = routine.exercises[currentPlan.routineExIndex];
+    if (!currentRoutineEx || !currentRoutineEx.superset_id) return [];
+    
+    return routine.exercises
+      .filter(ex => ex.superset_id === currentRoutineEx.superset_id)
+      .map(ex => allExercises.find(e => e.id === ex.exercise_id)?.name || 'Ejercicio');
+  }, [routine, plan, planIndex, allExercises]);
 
   // Timer de descanso basado en timestamp real
   useEffect(() => {
@@ -196,7 +313,7 @@ export default function FocusMode() {
     };
   }, [phase, restEndsAt, audioCtx]);
 
-  if (!routine) {
+  if (!routine || checkingSession) {
     return (
       <div className="min-h-dvh flex items-center justify-center">
         <span className="text-primary animate-pulse font-bold text-xl">Cargando...</span>
@@ -204,11 +321,13 @@ export default function FocusMode() {
     );
   }
 
+  const currentPlan = plan[planIndex] || plan[0] || { routineExIndex: 0, setNumber: 0, isLastInRound: true };
+  const exIndex = currentPlan.routineExIndex;
+  const setIndex = currentPlan.setNumber;
   const currentRoutineEx = routine.exercises[exIndex];
   const currentEx = allExercises.find(e => e.id === currentRoutineEx?.exercise_id);
   const targetSets = currentRoutineEx?.target_sets ?? 3;
-  const isLastExercise = exIndex === routine.exercises.length - 1;
-  const isLastSet = setIndex >= targetSets - 1;
+  const isSuperset = !!currentRoutineEx?.superset_id;
 
   // ── Helpers Globales ──
   const totalRoutineSets = routine.exercises.reduce((acc, ex) => acc + (ex.target_sets ?? 3), 0) || 1;
@@ -295,19 +414,49 @@ export default function FocusMode() {
     }
   };
 
+  // ── Siguiente serie (lógica core) ──
+  const goToNextValidPlan = (fromIndex: number, currentSkipped: string[]) => {
+    let next = fromIndex + 1;
+    while (next < plan.length) {
+      const exId = routine!.exercises[plan[next].routineExIndex].exercise_id;
+      if (!currentSkipped.includes(exId)) break;
+      next++;
+    }
+    
+    if (next >= plan.length) {
+      setPhase('completed');
+      if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 300]);
+    } else {
+      const nextPlan = plan[next];
+      const nextExId = routine!.exercises[nextPlan.routineExIndex].exercise_id;
+      const lastSetThisSession = completedSets.slice().reverse().find(s => s.exercise_id === nextExId);
+      if (lastSetThisSession) {
+        setWeight(String(lastSetThisSession.weight));
+        setReps(String(lastSetThisSession.reps));
+      }
+      
+      setPlanIndex(next);
+      if (plan[fromIndex] && plan[fromIndex].routineExIndex !== nextPlan.routineExIndex) {
+        setPhase('intro');
+      } else {
+        setPhase('active');
+      }
+    }
+  };
+
   // ── Confirmar serie ──
   const handleConfirmSet = () => {
     const w = parseFloat(weight) || 0;
     const r = parseInt(reps)    || 0;
-    if (r === 0) return; // al menos reps
+    if (r === 0) return;
 
     const newSet: WorkoutSet = {
       exercise_id: currentRoutineEx.exercise_id,
       weight: w, reps: r, set_type: 'normal'
     };
-    setCompletedSets(prev => [...prev, newSet]);
+    const updatedCompletedSets = [...completedSets, newSet];
+    setCompletedSets(updatedCompletedSets);
 
-    // Calcular avance (Carga Progresiva)
     if (lastTime && !progressExercises.has(currentRoutineEx.exercise_id)) {
       const isBetterWeight = w > lastTime.weight;
       const isBetterReps = w === lastTime.weight && r > lastTime.reps;
@@ -319,42 +468,62 @@ export default function FocusMode() {
       }
     }
 
-    if (isLastSet && isLastExercise) {
+    let hasMore = false;
+    for (let i = planIndex + 1; i < plan.length; i++) {
+       const exId = routine!.exercises[plan[i].routineExIndex].exercise_id;
+       if (!skippedExercises.includes(exId)) {
+         hasMore = true;
+         break;
+       }
+    }
+
+    if (!hasMore) {
       setPhase('completed');
       if ('vibrate' in navigator) navigator.vibrate([100, 50, 100, 50, 300]);
       return;
     }
 
-    // Iniciar descanso
-    let nextRest = 90;
-    if (isLastSet) {
-      nextRest = routine.rest_between_exercises ?? 180;
+    if (!currentPlan.isLastInRound) {
+       // Transición inmediata en Superset, sin descanso (o descanso muy corto)
+       goToNextValidPlan(planIndex, skippedExercises);
     } else {
-      nextRest = routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90;
+      let nextRest = 90;
+      let nextValidPlanIndex = planIndex + 1;
+      while (nextValidPlanIndex < plan.length) {
+         const exId = routine!.exercises[plan[nextValidPlanIndex].routineExIndex].exercise_id;
+         if (!skippedExercises.includes(exId)) break;
+         nextValidPlanIndex++;
+      }
+      
+      const nextPlanItem = plan[nextValidPlanIndex];
+      const nextRoutineEx = nextPlanItem ? routine!.exercises[nextPlanItem.routineExIndex] : null;
+
+      const isSameSuperset = currentRoutineEx.superset_id && nextRoutineEx && currentRoutineEx.superset_id === nextRoutineEx.superset_id;
+      const isSameExercise = nextRoutineEx && currentRoutineEx.exercise_id === nextRoutineEx.exercise_id;
+
+      if (!isSameExercise && !isSameSuperset) {
+         nextRest = routine.rest_between_exercises ?? 180;
+      } else {
+         nextRest = routine.rest_between_sets ?? currentRoutineEx.rest_seconds ?? 90;
+      }
+
+      setRestEndsAt(Date.now() + nextRest * 1000);
+      setRestDisplay(nextRest);
+      setPhase('resting');
     }
-    setRestEndsAt(Date.now() + nextRest * 1000);
-    setRestDisplay(nextRest);
-    setPhase('resting');
   };
 
   // ── Siguiente serie (desde modal de descanso) ──
   const handleNextSet = () => {
-    if (isLastSet) {
-      // Pasar al siguiente ejercicio
-      if (isLastExercise) {
-        handleFinish();
-        return;
-      }
-      setExIndex(prev => prev + 1);
-      setSetIndex(0);
-      setWeight('');
-      setReps('');
-      setPhase('intro');
-    } else {
-      setSetIndex(prev => prev + 1);
-      // No limpiamos weight ni reps para que se mantengan de la serie anterior
-      setPhase('active');
-    }
+    goToNextValidPlan(planIndex, skippedExercises);
+  };
+
+  // ── Omitir Ejercicio ──
+  const handleSkipExercise = () => {
+    if (!currentRoutineEx) return;
+    const newSkipped = [...skippedExercises, currentRoutineEx.exercise_id];
+    setSkippedExercises(newSkipped);
+    goToNextValidPlan(planIndex, newSkipped);
   };
 
   // ── Finalizar entrenamiento ──
@@ -364,21 +533,41 @@ export default function FocusMode() {
     try {
       const exerciseIds = Array.from(new Set(completedSets.map(s => s.exercise_id)));
       
-      const sessionData = {
-        owner_id: user.uid,
-        routine_id: routine.id,
-        started_at: startedAt,
-        finished_at: Date.now(),
-        duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
-        sets: completedSets,
-        exercise_ids: exerciseIds
-      };
+      if (existingSession && isResumed) {
+        // Combine with existing session
+        const combinedSets = [...(existingSession.sets || []), ...completedSets];
+        const combinedExerciseIds = Array.from(new Set([...(existingSession.exercise_ids || []), ...exerciseIds]));
+        const durationToAdd = Math.floor((Date.now() - startedAt) / 1000);
+        
+        const sessionData = {
+          owner_id: user.uid,
+          finished_at: Date.now(),
+          duration_seconds: (existingSession.duration_seconds || 0) + durationToAdd,
+          sets: combinedSets,
+          exercise_ids: combinedExerciseIds,
+          skipped_exercise_ids: skippedExercises // Whatever was skipped THIS time
+        };
 
-      // Guardado en segundo plano (fire-and-forget).
-      // Firestore lo guarda localmente de inmediato y sincroniza al recuperar red.
-      saveWorkout({ sessionData, sets: completedSets }).catch(err => {
-        console.error('Error sincronizando entrenamiento en background:', err);
-      });
+        updateWorkout({ id: existingSession.id, sessionData, sets: completedSets }).catch(err => {
+          console.error('Error sincronizando actualización en background:', err);
+        });
+      } else {
+        // Normal save
+        const sessionData = {
+          owner_id: user.uid,
+          routine_id: routine.id,
+          started_at: startedAt,
+          finished_at: Date.now(),
+          duration_seconds: Math.floor((Date.now() - startedAt) / 1000),
+          sets: completedSets,
+          exercise_ids: exerciseIds,
+          skipped_exercise_ids: skippedExercises
+        };
+
+        saveWorkout({ sessionData, sets: completedSets }).catch(err => {
+          console.error('Error sincronizando entrenamiento en background:', err);
+        });
+      }
       
       clearWorkout();
       setPhase('streak_celebration');
@@ -388,6 +577,59 @@ export default function FocusMode() {
       setSaving(false);
     }
   };
+
+  // ─────────────────────────────────────────────────────────
+  //  PANTALLA: RESUME PROMPT (CARDIO FRACCIONADO)
+  // ─────────────────────────────────────────────────────────
+  if (phase === 'resume_prompt') {
+    const skippedStrength = existingSession?.skipped_exercise_ids?.filter(id => {
+       return allExercises.find(e => e.id === id)?.muscle_group.toLowerCase() !== 'cardio';
+    }) || [];
+    
+    const skippedCardio = existingSession?.skipped_exercise_ids?.filter(id => {
+       return allExercises.find(e => e.id === id)?.muscle_group.toLowerCase() === 'cardio';
+    }) || [];
+
+    const totalSkipped = (existingSession?.skipped_exercise_ids || []).length;
+
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center bg-bg px-4 py-8 max-w-lg mx-auto text-center animate-in fade-in zoom-in-95">
+        <div className="w-24 h-24 bg-highlight/10 rounded-full flex items-center justify-center mb-6">
+          <Activity className="w-12 h-12 text-highlight" />
+        </div>
+        <h2 className="text-3xl font-black text-text mb-4">¡Doble Sesión!</h2>
+        <p className="text-text-muted mb-8 px-4 leading-relaxed">
+          Tienes una sesión inconclusa de hoy. Omitiste <strong className="text-text">{totalSkipped}</strong> ejercicios. ¿Qué deseas hacer?
+        </p>
+        
+        <div className="flex flex-col gap-3 w-full">
+          {skippedStrength.length > 0 && skippedCardio.length > 0 ? (
+            <>
+              <Button variant="highlight" fullWidth size="lg" className="h-14 font-black glow-highlight" onClick={() => handleResumeWorkout('all')}>
+                Retomar Ambos (Fuerza y Cardio)
+              </Button>
+              <Button variant="secondary" fullWidth size="lg" className="h-14 font-black text-text" onClick={() => handleResumeWorkout('strength')}>
+                Solo retomar Fuerza
+              </Button>
+              <Button variant="secondary" fullWidth size="lg" className="h-14 font-black text-text" onClick={() => handleResumeWorkout('cardio')}>
+                Solo hacer el Cardio omitido
+              </Button>
+            </>
+          ) : (
+            <Button variant="highlight" fullWidth size="lg" className="h-16 text-lg font-black glow-highlight" onClick={() => handleResumeWorkout('all')}>
+              Retomar ejercicios omitidos
+            </Button>
+          )}
+
+          <div className="h-px bg-border my-2 w-1/2 mx-auto" />
+
+          <Button variant="danger" fullWidth size="lg" className="h-14 font-black bg-danger/10 text-danger hover:bg-danger/20" onClick={() => handleResumeWorkout('new')}>
+            Ignorar y empezar desde cero
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────
   //  PANTALLA: INTRO DEL EJERCICIO
@@ -402,12 +644,33 @@ export default function FocusMode() {
 
         {/* Nombre del ejercicio */}
         <div className="flex-1 flex flex-col justify-center">
-          <p className="text-primary text-sm font-bold uppercase tracking-widest mb-3">
-            {currentEx?.muscle_group}
-          </p>
+          <div className="flex items-center gap-2 mb-3">
+            <p className="text-primary text-sm font-bold uppercase tracking-widest">
+              {currentEx?.muscle_group}
+            </p>
+            {isSuperset && (
+              <span className="bg-highlight/20 text-highlight text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-highlight/30">
+                Superset
+              </span>
+            )}
+          </div>
           <h1 className="text-4xl font-black text-text mb-6 leading-tight">
             {currentEx?.name || '...'}
           </h1>
+
+          {isSuperset && exercisesInSuperset.length > 1 && (
+            <div className="bg-highlight/5 border border-highlight/20 rounded-xl p-4 mb-6 text-left">
+              <p className="text-[10px] font-bold text-highlight uppercase tracking-widest mb-2">Este Superset incluye:</p>
+              <ul className="space-y-1">
+                {exercisesInSuperset.map((name, idx) => (
+                  <li key={idx} className={`text-sm flex items-center gap-2 ${name === currentEx?.name ? 'text-text font-bold' : 'text-text-muted'}`}>
+                    <span className="w-4 h-4 rounded-full bg-surface-alt flex items-center justify-center text-[9px] font-black">{idx + 1}</span>
+                    {name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Datos de última vez */}
           <div className="bg-surface border border-border rounded-2xl p-4 mb-8">
@@ -446,30 +709,38 @@ export default function FocusMode() {
         </div>
 
         {/* CTA */}
-        <Button
-          variant="highlight"
-          fullWidth
-          size="lg"
-          className="rounded-2xl h-16 text-xl font-black glow-highlight"
-          onClick={() => {
-            // Inicializar AudioContext en primera interacción de usuario
-            if (!audioCtx) {
-              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-              // Desbloquear tocando un sonido vacío
-              const osc = ctx.createOscillator();
-              const gainNode = ctx.createGain();
-              gainNode.gain.value = 0;
-              osc.connect(gainNode);
-              gainNode.connect(ctx.destination);
-              osc.start();
-              osc.stop(ctx.currentTime + 0.001);
-              setAudioCtx(ctx);
-            }
-            setPhase('active');
-          }}
-        >
-          <Play className="mr-2 fill-current" /> Empezar serie 1
-        </Button>
+        <div className="flex flex-col gap-3">
+          <Button
+            variant="highlight"
+            fullWidth
+            size="lg"
+            className="rounded-2xl h-16 text-xl font-black glow-highlight"
+            onClick={() => {
+              // Inicializar AudioContext en primera interacción de usuario
+              if (!audioCtx) {
+                const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                gainNode.gain.value = 0;
+                osc.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.001);
+                setAudioCtx(ctx);
+              }
+              setPhase('active');
+            }}
+          >
+            <Play className="mr-2 fill-current" /> Empezar serie {setIndex + 1}
+          </Button>
+
+          <button 
+            onClick={handleSkipExercise}
+            className="h-12 w-full rounded-2xl flex items-center justify-center text-sm font-bold text-text-muted hover:text-text hover:bg-surface-alt/50 transition-all border border-transparent hover:border-border"
+          >
+            Omitir Ejercicio
+          </button>
+        </div>
       </div>
     );
   }
@@ -484,6 +755,13 @@ export default function FocusMode() {
           title={currentEx?.name || 'Ejercicio'} 
           subtitle={`Serie ${setIndex + 1} de ${targetSets}`} 
         />
+        {isSuperset && (
+          <div className="flex justify-center -mt-4 mb-2">
+            <span className="bg-highlight/20 text-highlight text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-highlight/30">
+              Superset
+            </span>
+          </div>
+        )}
 
         {/* Inputs grandes */}
         <div className="flex-1 flex flex-col justify-center gap-6">
@@ -548,9 +826,7 @@ export default function FocusMode() {
             disabled={!reps}
           >
             <Check className="mr-2 w-6 h-6" />
-            {isLastSet && isLastExercise
-              ? 'Completar Rutina'
-              : 'Confirmar — Iniciar Descanso'}
+            {!currentPlan.isLastInRound ? 'Siguiente (Superset)' : 'Confirmar — Descanso'}
           </Button>
         </div>
       </div>
@@ -604,9 +880,7 @@ export default function FocusMode() {
             onClick={handleNextSet}
           >
             <ChevronRight className="mr-1 w-6 h-6" />
-            {isLastSet
-                ? `Ejercicio ${exIndex + 2}: ${allExercises.find(e => e.id === routine.exercises[exIndex + 1]?.exercise_id)?.name || '...'}`
-                : `Serie ${setIndex + 2} de ${targetSets}`}
+            Siguiente
           </Button>
 
           {restDisplay > 0 && (
@@ -732,6 +1006,7 @@ export default function FocusMode() {
         isSameDay={isSameDay}
         isRestored={isRestored}
         newStreak={newStreak}
+        isDoubleSession={isResumed} // Activa el efecto visual "Rayo" si reanudó sesión
         onClose={() => navigate('/')}
       />
     );

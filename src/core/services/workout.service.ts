@@ -46,6 +46,37 @@ export async function getWorkoutSessionsByUser(uid: string, timeRangeMs?: number
   return snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutSession));
 }
 
+export async function getIncompleteSessionToday(uid: string, routineId: string): Promise<WorkoutSession | null> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startOfDay = today.getTime();
+
+  // Usamos finished_at para aprovechar el índice compuesto que ya tienes creado en Firebase
+  // (owner_id ASC, finished_at DESC)
+  const q = query(
+    collection(db, 'workout_sessions'),
+    where('owner_id', '==', uid),
+    where('finished_at', '>=', startOfDay),
+    orderBy('finished_at', 'desc'),
+    limit(10)
+  );
+  
+  const snaps = await getDocs(q);
+  if (snaps.empty) return null;
+  
+  // Filtramos localmente por la rutina y que tenga ejercicios omitidos
+  const sessionDoc = snaps.docs.find(d => {
+    const data = d.data() as WorkoutSession;
+    return data.routine_id === routineId && data.skipped_exercise_ids && data.skipped_exercise_ids.length > 0;
+  });
+
+  if (sessionDoc) {
+    return { id: sessionDoc.id, ...sessionDoc.data() } as WorkoutSession;
+  }
+  
+  return null;
+}
+
 export async function getWorkoutHistoryPaginated(uid: string, pageParam: any | null, limitCount: number = 10) {
   const constraints: QueryConstraint[] = [
     where('owner_id', '==', uid),
@@ -129,6 +160,28 @@ export async function finishWorkoutAndStreak(sessionData: Omit<WorkoutSession, '
       last_workout_date: newDate,
       lifetime_tonnage: increment(sessionTonnage)
     }, { merge: true });
+  }
+
+  await batch.commit();
+}
+
+export async function updateWorkoutSessionAndStreak(
+  id: string, 
+  sessionData: Partial<WorkoutSession>, 
+  completedSets: WorkoutSet[]
+): Promise<void> {
+  const batch = writeBatch(db);
+  const ref = doc(db, 'workout_sessions', id);
+  
+  batch.update(ref, sessionData);
+
+  // También sumamos el tonelaje nuevo de esta sesión retomada
+  if (sessionData.owner_id && completedSets.length > 0) {
+    const userRef = doc(db, 'users', sessionData.owner_id);
+    const sessionTonnage = completedSets.reduce((acc, set) => acc + (set.weight * set.reps), 0);
+    batch.update(userRef, {
+      lifetime_tonnage: increment(sessionTonnage)
+    });
   }
 
   await batch.commit();

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import { getWorkoutSessionsByUser, finishWorkoutAndStreak, getWorkoutHistoryPaginated } from '@core/services/workout.service';
+import { getWorkoutSessionsByUser, finishWorkoutAndStreak, getWorkoutHistoryPaginated, updateWorkoutSessionAndStreak, deleteWorkoutSession } from '@core/services/workout.service';
 import type { WorkoutSession, WorkoutSet } from '@core/models';
 
 export function useWorkoutSessions(uid?: string, timeRangeMs?: number) {
@@ -31,6 +31,34 @@ export function useSaveWorkoutSession() {
       queryClient.invalidateQueries({ queryKey: ['workout_sessions'] });
       queryClient.invalidateQueries({ queryKey: ['stats_sessions'] }); 
       queryClient.invalidateQueries({ queryKey: ['profile', variables.sessionData.owner_id] });
+    }
+  });
+}
+
+export function useUpdateWorkoutSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sessionData, sets }: { id: string, sessionData: Partial<WorkoutSession>, sets: WorkoutSet[] }) => 
+      updateWorkoutSessionAndStreak(id, sessionData, sets),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['workout_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['workout_history_infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['stats_sessions'] }); 
+      if (variables.sessionData.owner_id) {
+        queryClient.invalidateQueries({ queryKey: ['profile', variables.sessionData.owner_id] });
+      }
+    }
+  });
+}
+
+export function useDeleteWorkoutSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteWorkoutSession(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workout_sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['workout_history_infinite'] });
+      queryClient.invalidateQueries({ queryKey: ['stats_sessions'] }); 
     }
   });
 }

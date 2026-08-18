@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@ui/hooks/useAuth';
 import { useWorkoutHistoryInfinite } from '@ui/hooks/useWorkout';
+import { useDeleteWorkoutSession } from '@ui/hooks/useWorkout';
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import type { WorkoutSession } from '@core/models';
-import { CalendarDays, Clock, Dumbbell, X, Trophy } from 'lucide-react';
+import { CalendarDays, Clock, Dumbbell, X, Trophy, Trash2 } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 
 // ──────────────────────────────────────────────
 // Helpers y Formateo
@@ -40,6 +42,9 @@ function getTonnageComparisons(tonnage: number) {
 // Componente Modal de Detalles
 // ──────────────────────────────────────────────
 function SessionDetailsModal({ session, onClose, getExerciseName }: { session: WorkoutSession; onClose: () => void; getExerciseName: (id: string) => string }) {
+  const { mutate: deleteSession, isPending: isDeleting } = useDeleteWorkoutSession();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
   // Agrupar sets por ejercicio
   const groupedSets = session.sets.reduce((acc, set) => {
     if (!acc[set.exercise_id]) acc[set.exercise_id] = [];
@@ -49,6 +54,20 @@ function SessionDetailsModal({ session, onClose, getExerciseName }: { session: W
 
   const totalTonnage = session.sets.reduce((acc, s) => acc + (s.weight * s.reps), 0);
 
+  const handleDelete = () => {
+    if (confirmDelete) {
+      deleteSession(session.id, {
+        onSuccess: () => {
+          onClose();
+        }
+      });
+    } else {
+      setConfirmDelete(true);
+      // Resetear confirmación si no hacen clic de nuevo rápido
+      setTimeout(() => setConfirmDelete(false), 3000);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-100 flex flex-col bg-bg/95 backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
       <header className="flex items-center justify-between p-4 border-b border-border/50 bg-surface/50">
@@ -56,9 +75,19 @@ function SessionDetailsModal({ session, onClose, getExerciseName }: { session: W
           <h2 className="text-lg font-black text-text">Resumen del Entrenamiento</h2>
           <p className="text-xs text-text-muted">{new Date(session.finished_at).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })}</p>
         </div>
-        <button onClick={onClose} className="p-2 bg-surface-alt rounded-full text-text-muted hover:text-text active:scale-95 transition-all">
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex gap-2">
+          <button 
+             onClick={handleDelete} 
+             disabled={isDeleting}
+             className={`p-2 rounded-full transition-all flex items-center ${confirmDelete ? 'bg-danger text-white' : 'bg-surface-alt text-danger hover:bg-danger/20'} active:scale-95`}
+          >
+            <Trash2 className="w-5 h-5" />
+            {confirmDelete && <span className="text-xs font-bold pl-1">¿Borrar?</span>}
+          </button>
+          <button onClick={onClose} className="p-2 bg-surface-alt rounded-full text-text-muted hover:text-text active:scale-95 transition-all">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 pb-24">
@@ -147,7 +176,34 @@ export function WorkoutHistory() {
     return () => observer.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
+  const { mutate: deleteSession, isPending: isDeleting } = useDeleteWorkoutSession();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const handleDeleteItem = (e: React.MouseEvent, session: WorkoutSession) => {
+    e.stopPropagation();
+    if (confirmDeleteId === session.id) {
+      deleteSession(session.id);
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId(session.id);
+      setTimeout(() => setConfirmDeleteId(null), 3000);
+    }
+  };
+
+  const location = useLocation();
+  const autoOpenRef = useRef<string | null>((location.state as any)?.openSessionId || null);
   const [selectedSession, setSelectedSession] = useState<WorkoutSession | null>(null);
+
+  useEffect(() => {
+    if (autoOpenRef.current && status === 'success' && data) {
+      const allS = data.pages.flatMap(p => p.data);
+      const s = allS.find(x => x.id === autoOpenRef.current);
+      if (s) {
+        setSelectedSession(s);
+        autoOpenRef.current = null; // Evitar que se vuelva a abrir automáticamente
+      }
+    }
+  }, [data, status]);
 
   if (status === 'pending') {
     return (
@@ -225,9 +281,12 @@ export function WorkoutHistory() {
                   </div>
 
                   {/* Card */}
-                  <button 
+                  <div 
                     onClick={() => setSelectedSession(session)}
-                    className={`flex-1 text-left bg-surface border p-4 rounded-3xl shadow-sm transition-all active:scale-[0.98] ${
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') setSelectedSession(session); }}
+                    className={`flex-1 text-left bg-surface border p-4 rounded-3xl shadow-sm transition-all active:scale-[0.98] cursor-pointer ${
                       isEpic 
                         ? 'border-highlight/40 hover:border-highlight hover:bg-surface-alt/80' 
                         : 'border-border hover:border-primary/50 hover:bg-surface-alt/50'
@@ -235,9 +294,20 @@ export function WorkoutHistory() {
                   >
                     <div className="flex justify-between items-baseline mb-2">
                       <span className="text-sm font-black text-text">{formatDate(session.finished_at)}</span>
-                      <span className="text-[10px] text-text-muted uppercase font-bold flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> {formatTime(session.duration_seconds)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-text-muted uppercase font-bold flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {formatTime(session.duration_seconds)}
+                        </span>
+                        <div className="w-px h-3 bg-border" />
+                        <button
+                          onClick={(e) => handleDeleteItem(e, session)}
+                          disabled={isDeleting}
+                          className={`p-1.5 rounded-full transition-all flex items-center ${confirmDeleteId === session.id ? 'bg-danger text-white' : 'text-text-muted hover:text-danger hover:bg-danger/20'} active:scale-95`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          {confirmDeleteId === session.id && <span className="text-[10px] font-bold pl-1 pr-0.5">¿Borrar?</span>}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-3">
@@ -273,7 +343,7 @@ export function WorkoutHistory() {
                         </div>
                       )}
                     </div>
-                  </button>
+                  </div>
                 </div>
               );
             })}

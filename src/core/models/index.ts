@@ -30,6 +30,7 @@ export interface RoutineExercise {
   target_sets: number;
   target_reps: number;
   rest_seconds?: number; // Mantenido por compatibilidad con rutinas antiguas
+  superset_id?: string; // Para agrupar ejercicios en Supersets / Circuitos
 }
 
 export interface Routine {
@@ -59,6 +60,7 @@ export interface WorkoutSession {
   duration_seconds: number;
   sets: WorkoutSet[];
   exercise_ids: string[];
+  skipped_exercise_ids?: string[]; // IDs de ejercicios omitidos (para reanudar luego)
 }
 
 export interface BodyMetric {

@@ -1,6 +1,6 @@
 # Roadmap — Forja
 
-## Fase 0 — MVP de hoy ✅ completada
+## Fase 0 — MVP de hoy ✅ Completada
 
 Objetivo: ir al gimnasio y usarla.
 
@@ -10,40 +10,44 @@ Objetivo: ir al gimnasio y usarla.
 - [x] Ejercicios: creación manual en la cuenta propia
 - [x] Rutinas: armado básico (ejercicios + series objetivo + tiempo de descanso)
 - [x] **Modo Focus:** pantalla oscura, peso/reps por serie, temporizador de descanso, botón "Finalizar entrenamiento"
-- [x] **"Última vez que hiciste esto":** al abrir un ejercicio, mostrar peso/reps de la sesión anterior — **pendiente de confirmar que muestra el último valor real y no un promedio, ver auditoría en Fase 1**
+- [x] **"Última vez que hiciste esto":** al abrir un ejercicio, mostrar peso/reps de la sesión anterior
 - [x] Wake Lock API (con fallback silencioso si el navegador no lo soporta), para que la pantalla no se apague a mitad de serie
 - [x] Escritura por lote (`writeBatch`) al finalizar la sesión — no una escritura por serie
 - [x] Catálogo inicial de ~35 ejercicios comunes, cargado como `is_global: true` vía script de seed
 - [x] Modo Focus: `target_sets` de la rutina pre-carga filas de input pero no bloquea
 
-### Extras entregados fuera de plan (no estaban en el prompt de Fase 0)
+### Extras entregados fuera de plan inicial
 
-- Perfil de usuario completo (altura, peso inicial, sexo, avatar SVG dinámico)
-- Sistema de rachas gamificado (niveles, hitos, badge "hoy asegurado") — **pendiente de confirmar que la query esté acotada, ver auditoría en Fase 1**
-- Frases motivacionales diarias en el dashboard
-- Descanso diferenciado entre series vs. entre ejercicios en Modo Focus
+- [x] Perfil de usuario completo (altura, peso inicial, sexo, avatar SVG dinámico)
+- [x] Sistema de rachas gamificado (niveles, hitos, trofeos)
+- [x] Descanso diferenciado entre series vs. entre ejercicios en Modo Focus
+- [x] Frases motivacionales diarias dinámicas en el dashboard
 
-> **Nota de proceso:** de acá en adelante, cualquier funcionalidad fuera de lo pedido en el prompt se propone antes de implementarse, no se agrega directamente. Lo de arriba se queda — es buen trabajo — pero sirve como recordatorio de mantener el alcance bajo control de cara a las siguientes fases.
-
-## Fase 1 — PWA, offline y progresión visual
+## Fase 1 — PWA, offline y progresión visual ✅ Completada
 
 Objetivo: robustez contra el wifi del gimnasio, y ver el avance.
 
-- [x] Auditoría: confirmar que el cálculo de racha use una query acotada (no todo el historial) y que "última vez" traiga el valor real más reciente (no un promedio) — corregir si hace falta
-- [x] PWA instalable de verdad (manifest + service worker vía `vite-plugin-pwa`) — lo que viste instalarse antes probablemente era el atajo genérico de Chrome, no esto
-- [x] Persistencia offline nativa de Firestore (`persistentLocalCache` — la API vieja `enableIndexedDbPersistence` está deprecada) — no reinventar una cola offline propia
-- [x] Dashboard: volumen semanal, 1RM estimado (fórmula de Epley), calculado **en el cliente sobre una query acotada y cacheado** con TanStack Query — sin Cloud Functions todavía, para quedarte en plan Spark sin tarjeta asociada
-- [x] Alertas sonoras/vibración al finalizar el descanso
+- [x] Auditoría de performance: queries acotadas para racha y última vez.
+- [x] PWA instalable nativamente (manifest + service worker vía `vite-plugin-pwa`).
+- [x] Persistencia offline nativa de Firestore (`persistentLocalCache`).
+- [x] Alertas sonoras/vibración al finalizar el descanso.
+- [x] **Análisis de Fuerza (Módulo de Progreso)**: Gráficas de evolución de peso por ejercicio.
+- [x] **Cálculo de 1RM Estimado**: Fórmula de Epley aplicada en vivo a las mejores series (Mejores Marcas / Historial de PRs).
+- [x] **Mapa Muscular**: Gráfico de radar interactivo con la distribución del volumen de entrenamiento en las últimas 8 semanas.
+- [x] **Detalle de Consistencia Semanal**: Modal interactivo que desglosa el cumplimiento diario (Cumplidos, Fallados, Pendientes, Programados).
+- [x] **Lógica de "Entrenamientos Recuperados"**: El sistema compensa y recompensa días fallados si el usuario realiza la rutina específica en un día extra dentro de la misma semana.
+- [x] **Auto-curación de Rachas**: Sistema de mitigación visual dinámica (Auto-heal) para resolver desincronizaciones de récords históricos vs rachas actuales.
+- [x] Distintivos UI dinámicos en Dashboard (Hoy asegurado, Pendiente hoy vibrante, ¡Empieza hoy!).
 
-## Fase 2 — Flexibilidad extrema y gamificación
+## Fase 2 — Flexibilidad extrema y gamificación ⏳ En curso
 
 Objetivo: retención vía recompensas visuales y comodidad.
 
-- [ ] Etiquetas de serie: Calentamiento, Drop-set, Al fallo
+- [x] Métricas corporales: peso corporal, medidas, fotos de progreso (Firebase Storage)
+- [ ] Etiquetas de serie en la UI: Calentamiento, Drop-set, Al fallo _(Nota: la base de datos ya soporta `normal`, `warmup` y `drop`)_
 - [ ] RPE (esfuerzo percibido) por serie
 - [ ] Sustitución rápida de ejercicio en vivo, sin dañar la plantilla de la rutina
 - [ ] Animación (confeti/alerta) al superar un Récord Personal histórico
-- [ ] Métricas corporales: peso corporal, medidas, fotos de progreso (Firebase Storage)
 - [ ] Supersets / circuitos — ejercicios agrupados sin descanso entre ellos
 - [ ] Calculadora de discos — qué platos cargar para llegar al peso objetivo
 - [ ] Exportar historial a CSV/JSON — dueño de sus propios datos, barato de implementar
@@ -52,12 +56,12 @@ Objetivo: retención vía recompensas visuales y comodidad.
 
 Objetivo: crecimiento orgánico y monetización.
 
-- [ ] Catálogo global de ejercicios con imágenes/GIFs
+- [ ] Catálogo global de ejercicios ampliado con imágenes/GIFs
 - [ ] Rutinas públicas, clonables, con paginación por cursor (`startAfter`) — nunca `offset`
 - [ ] Roles de usuario (bases para free/premium)
 - [ ] Notificaciones push (Firebase Cloud Messaging — no requiere plan Blaze)
 - [ ] `firestore.indexes.json` revisado por cada query compuesta nueva
-- [ ] Recién acá evaluar mover `user_stats` a una Cloud Function (requiere plan Blaze) — el volumen de usuarios ya lo justifica
+- [ ] Mover consolidación de `user_stats` a una Cloud Function (requiere plan Blaze) — cuando el volumen de base de datos lo justifique
 
 ## Fase 4 — Ecosistema mobile
 
