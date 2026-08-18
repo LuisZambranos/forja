@@ -17,6 +17,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       manifest: {
         name: 'Forja',
         short_name: 'Forja',
@@ -31,9 +34,12 @@ export default defineConfig({
           { src: 'icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
-        navigateFallback: 'index.html',
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
       },
     }),
   ],

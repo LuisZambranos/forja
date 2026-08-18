@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from "firebase/firestore";
 import { getMessaging } from "firebase/messaging";
+import { getAnalytics, isSupported as isAnalyticsSupported } from "firebase/analytics";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -19,3 +20,10 @@ export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
 });
 export const messaging = typeof window !== 'undefined' ? getMessaging(app) : null;
+
+// Inicializamos Analytics solo si el entorno lo soporta (evita errores en SSR o navegadores muy antiguos)
+isAnalyticsSupported().then(isSupported => {
+  if (isSupported && typeof window !== 'undefined') {
+    getAnalytics(app);
+  }
+});

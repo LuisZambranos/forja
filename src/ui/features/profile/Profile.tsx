@@ -55,7 +55,7 @@ export default function Profile() {
   const [saved, setSaved] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { permission, requestPermission } = usePushNotifications();
+  const { permission, requestPermission, isLoading: linkingPush } = usePushNotifications();
 
   useEffect(() => {
     if (userProfile) {
@@ -221,10 +221,10 @@ export default function Profile() {
           variant={permission === 'granted' ? 'secondary' : 'highlight'}
           size="sm"
           onClick={requestPermission}
-          disabled={permission === 'granted' || permission === 'denied'}
-          className={permission === 'granted' ? 'opacity-50' : ''}
+          disabled={linkingPush || permission === 'denied'}
+          className={permission === 'granted' ? 'opacity-80' : ''}
         >
-          {permission === 'granted' ? 'Activadas' : permission === 'denied' ? 'Bloqueadas' : 'Activar'}
+          {linkingPush ? 'Vinculando...' : permission === 'granted' ? 'Vincular Dispositivo' : permission === 'denied' ? 'Bloqueadas' : 'Activar'}
         </Button>
       </div>
 
