@@ -15,6 +15,7 @@ import { LiveSubstituteModal } from './components/LiveSubstituteModal';
 import { ExerciseModal } from '@ui/features/exercises/components/ExerciseModal';
 import { WarmupSuggestionCard } from './components/WarmupSuggestionCard';
 import { PlateCalculator } from './components/PlateCalculator';
+import { useToast } from '@ui/hooks/useToast';
 
 // ──────────────────────────────────────────────
 //  Tipos internos del flujo por serie
@@ -50,6 +51,7 @@ export default function FocusMode() {
   const { routineId } = useParams<{ routineId: string }>();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { addToast } = useToast();
 
   useWorkoutStore();
   const { finishWorkout: clearWorkout } = useWorkoutStore();
@@ -132,7 +134,7 @@ export default function FocusMode() {
         setCheckingSession(false);
       });
     } else if (!isLoadingRoutine && !routineData) {
-      alert('Rutina no encontrada');
+      addToast('Rutina no encontrada', 'error');
       navigate('/');
     }
   }, [routineData, isLoadingRoutine, navigate, user]);
@@ -155,7 +157,7 @@ export default function FocusMode() {
       }
 
       if (remainingExercises.length === 0) {
-        alert('No hay ejercicios de este tipo para retomar.');
+        addToast('No hay ejercicios de este tipo para retomar.', 'info');
         return;
       }
 
@@ -648,7 +650,7 @@ export default function FocusMode() {
       setPhase('streak_celebration');
     } catch (err) {
       console.error('Error al procesar entrenamiento:', err);
-      alert('Hubo un error interno al guardar tu entrenamiento.');
+      addToast('Hubo un error interno al guardar tu entrenamiento.', 'error');
       setSaving(false);
     }
   };

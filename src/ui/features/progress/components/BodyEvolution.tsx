@@ -6,9 +6,11 @@ import { Button } from '@ui/components/ui/Button';
 import { Input } from '@ui/components/ui/Input';
 import { CachedImage } from '@ui/components/ui/CachedImage';
 import type { BodyMetric } from '@core/models';
+import { useToast } from '@ui/hooks/useToast';
 
 export function BodyEvolution() {
   const { metrics, isLoading, isAdding, isUpdating, addMetric, updateMetric, deleteMetric } = useBodyEvolution();
+  const { addToast } = useToast();
   const [showModal, setShowModal] = useState(false);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
 
@@ -123,17 +125,19 @@ export function BodyEvolution() {
             photos: Object.keys(photos).length > 0 ? photos : null
           }
         });
+        addToast('Registro actualizado correctamente', 'success');
       } else {
         await addMetric({
           date: new Date().toISOString().split('T')[0],
           ...metricData
         });
+        addToast('Registro agregado exitosamente', 'success');
       }
 
       setShowModal(false);
     } catch (error) {
       console.error(error);
-      alert('Hubo un error al guardar el registro. Verifica tu conexión o API Key.');
+      addToast('Hubo un error al guardar el registro', 'error');
     } finally {
       setUploading(false);
     }

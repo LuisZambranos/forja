@@ -9,6 +9,7 @@ import { logoutUser } from '@core/services/user.service';
 import { useUpdateProfile, useUserProfile } from '@ui/hooks/useUser';
 import { compressImageToWebP, uploadToImgBB } from '@core/services/storage.service';
 import { CachedImage } from '@ui/components/ui/CachedImage';
+import { useToast } from '@ui/hooks/useToast';
 
 const AVATAR_MALE = (
   <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -48,6 +49,7 @@ const AVATAR_FEMALE = (
 
 export default function Profile() {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const { mutateAsync: updateProfile } = useUpdateProfile();
   const { data: userProfile, isLoading: isProfileLoading } = useUserProfile(user?.uid);
   const [profile, setProfile] = useState<Partial<User>>({});
@@ -74,6 +76,7 @@ export default function Profile() {
     });
     setSaving(false);
     setSaved(true);
+    addToast('Perfil actualizado correctamente', 'success');
     setTimeout(() => setSaved(false), 2000);
   };
 
@@ -95,7 +98,7 @@ export default function Profile() {
       }
     } catch (error) {
       console.error('Error al subir la foto:', error);
-      alert('Hubo un error al subir la foto de perfil.');
+      addToast('Hubo un error al subir la foto de perfil', 'error');
     } finally {
       setUploadingImage(false);
     }

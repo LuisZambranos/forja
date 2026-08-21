@@ -7,16 +7,23 @@ import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw';
 declare let self: ServiceWorkerGlobalScope;
 
 // Inject precache manifest
-precacheAndRoute(self.__WB_MANIFEST || []);
+const manifest = self.__WB_MANIFEST || [];
+precacheAndRoute(manifest);
 
 // Fallback para SPA (Single Page Application). Asegura que /rutinas, /perfil, etc. 
 // y la ruta raíz (/) carguen el index.html cuando estemos offline.
-try {
-  const handler = createHandlerBoundToURL('/index.html');
-  const navigationRoute = new NavigationRoute(handler);
-  registerRoute(navigationRoute);
-} catch (error) {
-  console.error('Error registrando fallback de navegación:', error);
+const hasIndexHtml = manifest.some((entry) => 
+  (typeof entry === 'string' ? entry : entry.url).includes('index.html')
+);
+
+if (hasIndexHtml) {
+  try {
+    const handler = createHandlerBoundToURL('/index.html');
+    const navigationRoute = new NavigationRoute(handler);
+    registerRoute(navigationRoute);
+  } catch (error) {
+    console.error('Error registrando fallback de navegación:', error);
+  }
 }
 
 // We use import.meta.env to get the Firebase config at build time
