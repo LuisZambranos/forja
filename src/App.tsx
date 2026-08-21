@@ -13,6 +13,7 @@ import AcademyCategoryView from '@ui/features/academy/AcademyCategory';
 import FocusMode from '@ui/features/workout/FocusMode';
 import Profile from '@ui/features/profile/Profile';
 import ProgressHub from '@ui/features/progress/ProgressHub';
+import { ToastContainer } from '@ui/components/ui/ToastContainer';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <ToastContainer />
       {/* Contenido principal — pb-16 para que no quede tapado por la nav */}
       <main className={!hideNav ? 'pb-16' : ''}>
         {children}

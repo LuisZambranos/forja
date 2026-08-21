@@ -6,6 +6,7 @@ import type { Exercise } from '@core/models';
 import { useMyExercises, useCreateExercise, useUpdateExercise } from '@ui/hooks/useExercises';
 import { SearchableSelect } from '@ui/components/ui/SearchableSelect';
 import { ChevronDown } from 'lucide-react';
+import { useToast } from '@ui/hooks/useToast';
 
 interface ExerciseModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ interface ExerciseModalProps {
 
 export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }: ExerciseModalProps) {
   const { user } = useAuth();
+  const { addToast } = useToast();
   
   const [name, setName] = useState('');
   const [muscleGroup, setMuscleGroup] = useState('');
@@ -96,6 +98,7 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
           is_global: false,
           type
         });
+        addToast('Ejercicio creado exitosamente', 'success');
         onSuccess?.(id);
       } else if (mode === 'edit' && initialData) {
         await updateExercise({
@@ -107,12 +110,13 @@ export function ExerciseModal({ isOpen, onClose, mode, initialData, onSuccess }:
             type
           }
         });
+        addToast('Ejercicio actualizado correctamente', 'success');
         onSuccess?.(initialData.id);
       }
       onClose();
     } catch (err) {
       console.error(err);
-      alert('Error al guardar el ejercicio');
+      addToast('Error al guardar el ejercicio', 'error');
     }
   };
 

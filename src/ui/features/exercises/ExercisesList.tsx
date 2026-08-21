@@ -7,9 +7,11 @@ import { Button } from '@ui/components/ui/Button';
 import { ChevronLeft, Plus, Search, ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { Modal } from '@ui/components/ui/Modal';
 import { ExerciseModal } from './components/ExerciseModal';
+import { useToast } from '@ui/hooks/useToast';
 
 export default function ExercisesList() {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -69,9 +71,10 @@ export default function ExercisesList() {
     try {
       await deleteExercise(deletingEx.id);
       setIsDeleteModalOpen(false);
+      addToast('Ejercicio eliminado', 'success');
     } catch (err) {
       console.error(err);
-      alert('Error al eliminar');
+      addToast('Error al eliminar el ejercicio', 'error');
     }
   };
 

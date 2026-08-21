@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link, useParams } from 'react-router-dom';
 import { useAuth } from '@ui/hooks/useAuth';
+import { useToast } from '@ui/hooks/useToast';
 import { Button } from '@ui/components/ui/Button';
 import { Modal } from '@ui/components/ui/Modal';
 import { SearchableSelect } from '@ui/components/ui/SearchableSelect';
 import { ExerciseModal } from '../exercises/components/ExerciseModal';
-import { ChevronLeft, Plus, X, Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Trash2, Link2, Unlink } from 'lucide-react';
+import { ChevronLeft, Plus, X, Search, ChevronDown, ChevronUp, ArrowUp, ArrowDown, Trash2, Link2, Unlink, Check } from 'lucide-react';
+
 import { useMyExercises, useGlobalExercises } from '@ui/hooks/useExercises';
 import { useRoutine, useCreateRoutine, useUpdateRoutine, useDeleteRoutine } from '@ui/hooks/useRoutines';
 import type { Exercise, RoutineExercise } from '@core/models';
@@ -13,6 +15,7 @@ import type { Exercise, RoutineExercise } from '@core/models';
 export default function RoutineBuilder() {
   const { user, loading: loadingAuth } = useAuth();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const { id } = useParams<{ id: string }>();
   const isEditing = Boolean(id);
 
@@ -26,6 +29,8 @@ export default function RoutineBuilder() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [recentlyAddedIds, setRecentlyAddedIds] = useState<Record<string, boolean>>({});
+
   
   // Estados para nuevo ejercicio inline
   const [isCreateExerciseModalOpen, setIsCreateExerciseModalOpen] = useState(false);
@@ -40,7 +45,7 @@ export default function RoutineBuilder() {
   useEffect(() => {
     if (isEditing && routineData && !loadingAuth) {
       if (!user?.uid || routineData.owner_id !== user.uid) {
-        alert('Rutina no encontrada o no tienes permiso.');
+        addToast('Rutina no encontrada o no tienes permiso.', 'error');
         navigate('/');
         return;
       }
@@ -98,12 +103,17 @@ export default function RoutineBuilder() {
   const addExercise = (exerciseId: string) => {
     const exercise = allExercises.find(e => e.id === exerciseId);
     const isCardio = exercise?.type === 'cardio';
-    setRoutineExercises([...routineExercises, { 
+    setRoutineExercises(prev => [...prev, { 
       exercise_id: exerciseId, 
       target_sets: 1, 
       target_reps: isCardio ? 0 : 10,
       target_duration: isCardio ? 15 : undefined 
     }]);
+
+    setRecentlyAddedIds(prev => ({ ...prev, [exerciseId]: true }));
+    setTimeout(() => {
+      setRecentlyAddedIds(prev => ({ ...prev, [exerciseId]: false }));
+    }, 3000);
   };
 
   const updateExercise = (index: number, field: keyof RoutineExercise, value: number) => {
@@ -181,15 +191,19 @@ export default function RoutineBuilder() {
         rest_between_exercises: restBetweenExercises
       };
 
+      const cleanPayload = JSON.parse(JSON.stringify(payload));
+
       if (isEditing && id) {
-        await updateRoutine({ id, data: payload });
+        await updateRoutine({ id, data: cleanPayload });
+        addToast('Rutina actualizada con éxito', 'success');
       } else {
-        await createRoutine(payload);
+        await createRoutine(cleanPayload);
+        addToast('Rutina creada con éxito', 'success');
       }
       navigate('/');
     } catch (err) {
       console.error(err);
-      alert('Error al guardar rutina');
+      addToast('Error al guardar rutina', 'error');
     }
   };
 
@@ -197,10 +211,11 @@ export default function RoutineBuilder() {
     if (!id) return;
     try {
       await deleteRoutine(id);
+      addToast('Rutina eliminada', 'success');
       navigate('/');
     } catch (err) {
       console.error(err);
-      alert('Error al eliminar rutina');
+      addToast('Error al eliminar rutina', 'error');
     }
   };
 
@@ -400,9 +415,14 @@ export default function RoutineBuilder() {
                         </div>
                         
                         <div className="pr-28 mb-5">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1 block">
-                            {ex?.muscle_group || 'Otro'}
-                          </span>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="w-5 h-5 rounded-md bg-primary/20 text-primary flex items-center justify-center font-black text-[10px]">
+                              {i + 1}
+                            </span>
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-primary">
+                              {ex?.muscle_group || 'Otro'}
+                            </span>
+                          </div>
                           <h3 className="font-bold text-lg text-text leading-tight">{ex?.name || 'Cargando...'}</h3>
                         </div>
                       
@@ -502,18 +522,39 @@ export default function RoutineBuilder() {
                     
                     {isOpen && (
                       <div className="flex flex-col divide-y divide-border/50 border-t">
-                        {exs.map(ex => (
-                          <div key={ex.id} className="px-5 py-3.5 flex items-center justify-between hover:bg-surface-alt/30 transition-colors">
-                            <span className="text-sm text-text font-semibold">{ex.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => addExercise(ex.id)}
-                              className="w-10 h-10 rounded-xl bg-highlight/10 text-highlight flex items-center justify-center hover:bg-highlight hover:text-white transition-colors border border-highlight/20 hover:border-highlight active:scale-95"
-                            >
-                              <Plus className="w-5 h-5" />
-                            </button>
-                          </div>
-                        ))}
+                        {exs.map(ex => {
+                          const isRecentlyAdded = recentlyAddedIds[ex.id];
+                          const isInRoutine = routineExercises.some(re => re.exercise_id === ex.id);
+
+                          return (
+                            <div key={ex.id} className={`relative px-5 py-3.5 flex items-center justify-between transition-all duration-300 ${isRecentlyAdded ? 'bg-success/10' : 'hover:bg-surface-alt/30'}`}>
+                              
+                              {/* Animación del borde lateral de la tarjeta si se acaba de agregar */}
+                              <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-500 ${isRecentlyAdded ? 'bg-success shadow-[0_0_12px_rgba(34,197,94,0.8)]' : isInRoutine ? 'bg-highlight' : 'bg-transparent'}`} />
+
+                              <div className="flex flex-col justify-center z-10 pl-2 min-h-11">
+                                <span className="text-sm text-text font-semibold leading-tight">{ex.name}</span>
+                                <div className="h-3.5 mt-0.5 overflow-hidden">
+                                  {isInRoutine && !isRecentlyAdded && <span className="text-[10px] leading-none font-bold text-highlight uppercase tracking-widest animate-in fade-in duration-300 block">En la rutina</span>}
+                                  {isRecentlyAdded && <span className="text-[10px] leading-none font-bold text-success uppercase tracking-widest animate-in fade-in slide-in-from-bottom-1 duration-300 block">¡Agregado!</span>}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                disabled={isRecentlyAdded}
+                                onClick={() => addExercise(ex.id)}
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 border active:scale-95 z-10 ${
+                                  isRecentlyAdded
+                                    ? 'bg-success text-white border-success scale-110 shadow-lg shadow-success/20 cursor-not-allowed'
+                                    : 'bg-highlight/10 text-highlight hover:bg-highlight hover:text-white border-highlight/20 hover:border-highlight'
+                                }`}
+                              >
+                                {isRecentlyAdded ? <Check className="w-5 h-5 animate-in zoom-in spin-in-12 duration-300" /> : <Plus className="w-5 h-5" />}
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
