@@ -14,6 +14,8 @@ import FocusMode from '@ui/features/workout/FocusMode';
 import Profile from '@ui/features/profile/Profile';
 import ProgressHub from '@ui/features/progress/ProgressHub';
 import { ToastContainer } from '@ui/components/ui/ToastContainer';
+import { InstallPromptToast } from '@ui/components/pwa/InstallPromptToast';
+import '@ui/hooks/usePWAInstall';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +35,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       <ToastContainer />
+      <InstallPromptToast />
       {/* Contenido principal — pb-16 para que no quede tapado por la nav */}
       <main className={!hideNav ? 'pb-16' : ''}>
         {children}

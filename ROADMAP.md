@@ -29,6 +29,7 @@ Objetivo: robustez contra el wifi del gimnasio, y ver el avance.
 
 - [x] Auditoría de performance: queries acotadas para racha y última vez.
 - [x] PWA instalable nativamente (manifest + service worker vía `vite-plugin-pwa`).
+- [x] Botón directo de instalación en Configuración/Perfil con soporte nativo de prompt e instrucciones visuales para iOS.
 - [x] Persistencia offline nativa de Firestore (`persistentLocalCache`).
 - [x] Alertas sonoras/vibración al finalizar el descanso.
 - [x] **Análisis de Fuerza (Módulo de Progreso)**: Gráficas de evolución de peso por ejercicio.
