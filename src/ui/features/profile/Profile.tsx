@@ -10,6 +10,7 @@ import { useUpdateProfile, useUserProfile } from '@ui/hooks/useUser';
 import { compressImageToWebP, uploadToImgBB } from '@core/services/storage.service';
 import { CachedImage } from '@ui/components/ui/CachedImage';
 import { useToast } from '@ui/hooks/useToast';
+import { InstallPWAButton } from '@ui/components/pwa/InstallPWAButton';
 
 const AVATAR_MALE = (
   <svg viewBox="0 0 100 100" className="w-full h-full">
@@ -210,40 +211,48 @@ export default function Profile() {
         />
       </div>
 
-      {/* Configuración Notificaciones */}
-      <div className="bg-surface border border-border p-4 rounded-2xl mb-8 flex items-center justify-between">
-        <div className="flex-1 pr-4">
-          <h3 className="text-sm font-bold text-text flex items-center gap-2">
-            <Bell className="w-4 h-4 text-highlight" /> Notificaciones Push
-          </h3>
-          <p className="text-xs text-text-muted mt-1 leading-relaxed">
-            Recordatorios semanales para no perder el hábito.
-          </p>
-        </div>
-        <Button 
-          variant={permission === 'granted' ? 'secondary' : 'highlight'}
-          size="sm"
-          onClick={requestPermission}
-          disabled={linkingPush || permission === 'denied'}
-          className={permission === 'granted' ? 'opacity-80' : ''}
-        >
-          {linkingPush ? 'Vinculando...' : permission === 'granted' ? 'Vincular Dispositivo' : permission === 'denied' ? 'Bloqueadas' : 'Activar'}
-        </Button>
-      </div>
-
-
-
       <Button
         variant="highlight"
         fullWidth
         size="lg"
         onClick={handleSave}
         disabled={saving}
-        className="rounded-2xl h-14 font-black"
+        className="rounded-2xl h-14 font-black mb-8"
       >
         <Save className="mr-2 w-5 h-5" />
         {saving ? 'Guardando...' : saved ? '¡Guardado! ✓' : 'Guardar Perfil'}
       </Button>
+
+      {/* Sección Configuración */}
+      <div className="space-y-3 mb-8">
+        <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">
+          Configuración
+        </h2>
+
+        {/* Instalar la app (PWA) */}
+        <InstallPWAButton />
+
+        {/* Configuración Notificaciones */}
+        <div className="bg-surface border border-border p-4 rounded-2xl flex items-center justify-between">
+          <div className="flex-1 pr-4">
+            <h3 className="text-sm font-bold text-text flex items-center gap-2">
+              <Bell className="w-4 h-4 text-highlight" /> Notificaciones Push
+            </h3>
+            <p className="text-xs text-text-muted mt-1 leading-relaxed">
+              Recordatorios semanales para no perder el hábito.
+            </p>
+          </div>
+          <Button 
+            variant={permission === 'granted' ? 'secondary' : 'highlight'}
+            size="sm"
+            onClick={requestPermission}
+            disabled={linkingPush || permission === 'denied'}
+            className={permission === 'granted' ? 'opacity-80' : ''}
+          >
+            {linkingPush ? 'Vinculando...' : permission === 'granted' ? 'Vincular Dispositivo' : permission === 'denied' ? 'Bloqueadas' : 'Activar'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
